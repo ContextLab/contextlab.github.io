@@ -1,0 +1,77 @@
+/* Research page specific fixes to match original */
+
+body {
+    background-color: rgba(204, 226, 216, 1) !important;
+}
+
+.main-content {
+    max-width: 1000px !important;
+    padding: 80px 40px 100px !important;
+}
+
+.page-header {
+    margin-bottom: 50px !important;
+}
+
+.page-header h1 {
+    margin-bottom: 25px !important;
+}
+
+.page-header h3 {
+    line-height: 1.65 !important;
+    margin-bottom: 25px !important;
+}
+
+.page-intro {
+    margin-bottom: 35px !important;
+    line-height: 1.75 !important;
+}
+
+hr, .divider {
+    margin: 70px 0 !important;
+}
+
+.content-section {
+    margin-bottom: 0px !important;
+}
+
+.content-section h2 {
+    margin-bottom: 30px !important;
+}
+
+.content-section p {
+    line-height: 1.85 !important;
+    margin-bottom: 1.1em !important;
+}
+
+.two-column {
+    gap: 55px !important;
+    margin-bottom: 70px !important;
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+    .main-content {
+        padding: 40px 20px !important;
+    }
+
+    .two-column,
+    .two-column.reverse {
+        grid-template-columns: 1fr !important;
+        gap: 30px !important;
+    }
+
+    .two-column img,
+    .two-column.reverse img {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    .page-header h1 {
+        font-size: 24px !important;
+    }
+
+    .page-header h3 {
+        font-size: 16px !important;
+    }
+}
