@@ -1404,8 +1404,13 @@ body.homepage .site-header {
     }
 
     .two-column,
-    .two-column.reverse {
+    .two-column.reverse,
+    .two-column.lab-director {
         grid-template-columns: 1fr;
+    }
+
+    .two-column.lab-director figure {
+        margin-top: 0;  /* Reset negative margin on mobile */
     }
 
     /* People grid - single column on mobile */
