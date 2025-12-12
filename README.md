@@ -2,7 +2,7 @@
 
 The official website for the Contextual Dynamics Lab at Dartmouth College, hosted on GitHub Pages.
 
-**Live site:** [https://contextlab.github.io](https://contextlab.github.io)
+**Live site:** [https://context-lab.com](https://context-lab.com)
 
 ## Site Structure
 
