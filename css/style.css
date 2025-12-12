@@ -1021,11 +1021,11 @@ body.info-transitioning .brain-image {
 }
 
 .info-text {
-    position: fixed;
+    position: absolute;
     top: 50%;
-    right: 10%;
+    right: 5%;
     transform: translateY(-50%);
-    width: 40%;
+    width: 45%;
     max-width: 450px;
     opacity: 0;
     transition: opacity 0.27s ease; /* 50% faster animation */
@@ -1066,14 +1066,14 @@ body.info-transitioning .brain-image {
 
 /* Info Panel Active State - Gallery View */
 body.info-active .brain-wrapper {
-    left: 25%;
+    left: 27%;
     top: 50%;
 }
 
 body.info-active .brain-image {
-    /* Sized to fit in the left portion (before text area), 25% larger than original */
-    width: 50vw;
-    max-width: 500px;
+    /* Sized to fill ~80% of left half, but never exceed 90% of untoggled size */
+    width: 40vw;
+    max-width: 810px; /* 90% of untoggled max (900px) */
     max-height: 80vh;
 }
 
