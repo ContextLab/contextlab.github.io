@@ -8,6 +8,7 @@ on:
       - 'data/**'
       - 'templates/**'
       - 'scripts/**'
+      - '.github/workflows/build-content.yml'
   pull_request:
     branches:
       - main
@@ -15,6 +16,7 @@ on:
       - 'data/**'
       - 'templates/**'
       - 'scripts/**'
+      - '.github/workflows/build-content.yml'
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
