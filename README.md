@@ -10,9 +10,9 @@ The official website for the Contextual Dynamics Lab at Dartmouth College, hoste
 contextlab.github.io/
 ├── index.html          # Homepage with animated brain
 ├── research.html       # Research interests and projects
-├── people.html         # Current members and alumni
-├── publications.html   # Papers, talks, posters, and course materials
-├── software.html       # Open-source software projects
+├── people.html         # Current members and alumni (auto-generated)
+├── publications.html   # Papers, talks, posters, materials (auto-generated)
+├── software.html       # Open-source software projects (auto-generated)
 ├── contact.html        # Contact form
 ├── news.html           # Lab news and updates
 ├── css/
@@ -24,8 +24,21 @@ contextlab.github.io/
 │   ├── people/         # Team member photos
 │   ├── publications/   # Publication thumbnails
 │   └── software/       # Software project images
-└── documents/
-    └── JRM_CV.pdf      # Jeremy Manning's CV
+├── documents/
+│   └── JRM_CV.pdf      # Jeremy Manning's CV
+├── data/               # Content source files (edit these!)
+│   ├── publications.xlsx
+│   ├── people.xlsx
+│   └── software.xlsx
+├── templates/          # HTML templates for auto-generation
+│   ├── publications.html
+│   ├── people.html
+│   └── software.html
+├── scripts/            # Build and validation scripts
+│   ├── build.py
+│   └── ...
+└── tests/              # Automated tests
+    └── ...
 ```
 
 ## Design & Theming
@@ -107,9 +120,165 @@ To update the form endpoint:
 2. Create a new form
 3. Replace the `action` URL in the form HTML
 
-## Adding Content
+## Automated Content Generation
 
-### New Team Member
+The publications, people, and software pages are **automatically generated** from Excel spreadsheets. This makes it easy to update content without editing HTML directly.
+
+### How It Works
+
+```
+data/                          # Source data (edit these!)
+├── publications.xlsx          # 104 publications
+├── people.xlsx                # 95 people entries
+└── software.xlsx              # 20 software items
+
+templates/                     # HTML templates with markers
+├── publications.html
+├── people.html
+└── software.html
+
+scripts/                       # Build scripts
+├── build.py                   # Master build script
+├── build_publications.py
+├── build_people.py
+├── build_software.py
+├── validate_data.py           # Data validation
+├── pre_push_check.py          # Pre-push checks
+└── utils.py                   # Shared utilities
+
+# Generated output (don't edit directly!)
+├── publications.html
+├── people.html
+└── software.html
+```
+
+### Updating Content
+
+#### Adding a New Publication
+
+1. Open `data/publications.xlsx` in Excel/Google Sheets
+2. Go to the appropriate sheet (`papers`, `preprints`, `chapters`, or `other`)
+3. Add a new row with:
+   - `title` - Publication title
+   - `title_url` - Link to paper (DOI, PDF, etc.)
+   - `citation` - Full citation text (can include HTML links)
+   - `image` - Thumbnail filename (optional, place image in `images/publications/`)
+4. Save and push to GitHub (or run build locally)
+
+#### Adding a New Team Member
+
+1. Open `data/people.xlsx` in Excel/Google Sheets
+2. Go to the `members` sheet
+3. Add a new row with:
+   - `name` - Person's name
+   - `name_url` - Personal website (optional)
+   - `role` - e.g., "grad student", "undergrad", "postdoc"
+   - `bio` - Biography text
+   - `image` - Photo filename (place photo in `images/people/`)
+4. Save and push to GitHub
+
+#### Adding Alumni
+
+1. Open `data/people.xlsx`
+2. Go to the appropriate sheet:
+   - `alumni_postdocs` - Former postdocs
+   - `alumni_grads` - Former graduate students
+   - `alumni_managers` - Former lab managers
+   - `alumni_undergrads` - Former undergraduates
+3. Add a row with:
+   - `name` - Person's name
+   - `name_url` - Personal website (optional)
+   - `current_position` - e.g., "now at Google"
+   - `current_position_url` - Link to current employer (optional)
+
+#### Adding Software
+
+1. Open `data/software.xlsx`
+2. Go to the appropriate sheet (`python`, `javascript`, or `matlab`)
+3. Add a new row with:
+   - `name` - Project name
+   - `description` - Brief description
+   - `links_html` - HTML for links, e.g., `[<a href="https://github.com/..." target="_blank">GitHub</a>]`
+
+### Building Locally
+
+```bash
+# Install dependencies
+pip install -r requirements-build.txt
+
+# Validate data files
+python scripts/validate_data.py
+
+# Build all pages
+python scripts/build.py
+
+# Or run the full pre-push check
+python scripts/pre_push_check.py
+```
+
+### Automatic Builds (GitHub Actions)
+
+When you push changes to `data/`, `templates/`, or `scripts/` on the `main` branch, GitHub Actions automatically:
+
+1. Validates all spreadsheet data
+2. Rebuilds the HTML pages
+3. Runs the test suite (76 tests)
+4. Commits and pushes the regenerated HTML
+
+You can also manually trigger a build from the [Actions tab](https://github.com/ContextLab/contextlab.github.io/actions).
+
+### Spreadsheet Field Reference
+
+#### publications.xlsx
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `title` | Yes | Publication title |
+| `title_url` | No | Link to paper |
+| `citation` | Yes | Full citation (HTML allowed) |
+| `image` | No | Thumbnail filename |
+
+#### people.xlsx - members sheet
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Person's name |
+| `name_url` | No | Personal website |
+| `role` | No | Role in lab |
+| `bio` | No | Biography text |
+| `image` | No | Photo filename |
+
+#### people.xlsx - alumni sheets
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Person's name |
+| `name_url` | No | Personal website |
+| `current_position` | No | Current role/employer |
+| `current_position_url` | No | Link to employer |
+
+#### software.xlsx
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Project name |
+| `description` | Yes | Brief description |
+| `links_html` | No | HTML links to repo, docs, etc. |
+
+### Tips
+
+- **HTML in cells**: You can use HTML tags in spreadsheet cells (e.g., `<a href="...">`, `<em>`, `<strong>`)
+- **Image files**: Place images in the appropriate `images/` subdirectory before referencing them
+- **Validation**: Run `python scripts/validate_data.py` to check for missing required fields or broken image references
+- **Don't edit generated HTML**: Changes to `publications.html`, `people.html`, and `software.html` in the root directory will be overwritten by the build system
+
+---
+
+## Adding Content (Legacy/Manual Method)
+
+> **Note:** For publications, people, and software pages, use the spreadsheet method above. The manual method below is for other pages or special cases.
+
+### New Team Member (Manual)
 
 1. Add photo to `images/people/` (recommended: 400x400px)
 2. Edit `people.html`, add to appropriate section:
@@ -122,7 +291,7 @@ To update the form endpoint:
 </div>
 ```
 
-### New Publication
+### New Publication (Manual)
 
 1. Add thumbnail to `images/publications/` (recommended: 500x500px with green border)
 2. Edit `publications.html`, add to publications grid:
@@ -138,7 +307,7 @@ To update the form endpoint:
 </div>
 ```
 
-### New Software Project
+### New Software Project (Manual)
 
 1. Add screenshot to `images/software/`
 2. Edit `software.html`, add to software grid
