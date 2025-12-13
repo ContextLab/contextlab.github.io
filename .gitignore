@@ -15,7 +15,6 @@ notes/
 *.bak
 .playwright-mcp/
 downloaded_site/
-scripts/
 
 # Python
 __pycache__/
