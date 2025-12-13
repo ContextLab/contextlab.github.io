@@ -51,6 +51,48 @@ def load_spreadsheet(filepath: Path) -> List[Dict[str, Any]]:
     return rows
 
 
+def load_spreadsheet_all_sheets(filepath: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """Load Excel spreadsheet with all sheets.
+
+    Args:
+        filepath: Path to the .xlsx file
+
+    Returns:
+        Dictionary with sheet names as keys, each containing list of row dicts.
+        Empty cells are converted to empty strings.
+
+    Raises:
+        FileNotFoundError: If the spreadsheet doesn't exist
+    """
+    wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+
+    data = {}
+    for sheet_name in wb.sheetnames:
+        sheet = wb[sheet_name]
+
+        # Get headers from first row
+        headers = [cell.value for cell in sheet[1]]
+
+        rows = []
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            # Skip completely empty rows
+            if not any(cell is not None for cell in row):
+                continue
+
+            row_dict = {}
+            for header, value in zip(headers, row):
+                if value is None:
+                    row_dict[header] = ''
+                else:
+                    row_dict[header] = value
+            rows.append(row_dict)
+
+        data[sheet_name] = rows
+
+    wb.close()
+    return data
+
+
 def inject_content(template_path: Path, output_path: Path,
                    replacements: Dict[str, str]) -> None:
     """Inject generated content into template at marker locations.
