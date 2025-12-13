@@ -9,3 +9,21 @@ vendor/
 # Claude Code instructions (local only)
 CLAUDE.md
 notes/
+
+# Development artifacts
+.DS_Store
+*.bak
+.playwright-mcp/
+downloaded_site/
+scripts/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+venv/
+.venv/
+
+# Claude skills (local only)
+.claude/
