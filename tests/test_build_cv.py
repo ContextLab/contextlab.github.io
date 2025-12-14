@@ -260,7 +260,9 @@ Email: \href{mailto:test@example.com}{test@example.com}\\
         info = extract_header_info(body)
         assert 'header_lines' in info
         assert len(info['header_lines']) > 0
-        assert any('Department' in line for line in info['header_lines'])
+        # header_lines is a list of dicts with 'text' and 'space_after' keys
+        texts = [line['text'] if isinstance(line, dict) else line for line in info['header_lines']]
+        assert any('Department' in text for text in texts)
 
 
 class TestExtractSections:
@@ -346,7 +348,7 @@ Content
 '''
         html = generate_html(tex_content)
         assert 'cv-download-bar' in html
-        assert 'Download CV as PDF' in html
+        assert 'Download PDF' in html
 
     def test_html_has_css_link(self):
         """Test that HTML includes CSS link."""
@@ -790,7 +792,7 @@ class TestRealCVContent:
 
             # Should have download button
             assert 'cv-download-bar' in content
-            assert 'Download CV as PDF' in content
+            assert 'Download PDF' in content
 
 
 class TestEdgeCases:

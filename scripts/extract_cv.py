@@ -118,11 +118,41 @@ def convert_href(text: str) -> str:
     return ''.join(result)
 
 
+def remove_command_with_braces(text: str, cmd: str) -> str:
+    """Remove a LaTeX command and its braced argument, handling nested braces."""
+    pattern = '\\' + cmd + '{'
+    result = []
+    i = 0
+
+    while i < len(text):
+        pos = text.find(pattern, i)
+        if pos == -1:
+            result.append(text[i:])
+            break
+
+        result.append(text[i:pos])
+        brace_pos = pos + len(pattern) - 1
+        _, end_pos = balanced_braces_extract(text, brace_pos)
+
+        if end_pos > 0:
+            i = end_pos
+        else:
+            result.append(text[pos:pos + len(pattern)])
+            i = pos + len(pattern)
+
+    return ''.join(result)
+
+
 def convert_latex_formatting(text: str) -> str:
     """Convert LaTeX formatting commands to HTML."""
     # Remove LaTeX comments (lines starting with %)
     text = re.sub(r'^%.*$', '', text, flags=re.MULTILINE)
     text = re.sub(r'(?<!\\)%.*$', '', text, flags=re.MULTILINE)
+
+    # Remove commands with nested braces FIRST (before other processing)
+    text = remove_command_with_braces(text, 'blfootnote')
+    text = remove_command_with_braces(text, 'vspace')
+    text = remove_command_with_braces(text, 'hspace')
 
     # Handle href first (two arguments)
     text = convert_href(text)
@@ -168,14 +198,11 @@ def convert_latex_formatting(text: str) -> str:
     for old, new in replacements:
         text = text.replace(old, new)
 
-    # Line breaks with spacing
-    text = re.sub(r'\\\\\[[\d.]+cm\]', '<br>\n', text)
+    # Line breaks with spacing - \\[.1cm] etc adds extra space between blocks
+    text = re.sub(r'\\\\\[[\d.]+cm\]', '<br><span class="block-spacer"></span>\n', text)
     text = text.replace(r'\\', '<br>\n')
 
-    # Remove commands we don't need
-    text = re.sub(r'\\blfootnote\{[^}]*\}', '', text)
-    text = re.sub(r'\\vspace\{[^}]*\}', '', text)
-    text = re.sub(r'\\hspace\{[^}]*\}', '', text)
+    # Remove remaining LaTeX commands we don't need
     text = re.sub(r'\\noindent\s*', '', text)
 
     # Math mode: $...$ - simple handling
@@ -185,20 +212,18 @@ def convert_latex_formatting(text: str) -> str:
     text = re.sub(r'\^\\mathrm\{([^}]+)\}', r'<sup>\1</sup>', text)
     text = re.sub(r'\^\{([^}]+)\}', r'<sup>\1</sup>', text)
 
+    # Remove any remaining raw LaTeX commands that shouldn't appear
+    text = re.sub(r'\\begin\{center\}', '', text)
+    text = re.sub(r'\\end\{center\}', '', text)
+    text = re.sub(r'\{\\scriptsize\s+', '', text)
+    text = re.sub(r'\\today\}?\s*', '', text)
+
     return text
 
 
-def parse_etaremune(content: str) -> List[str]:
-    """Parse etaremune environment (reverse-numbered list) and return items."""
+def parse_single_etaremune(list_content: str) -> List[str]:
+    """Parse a single etaremune list content and return items."""
     items = []
-
-    # Find etaremune content
-    match = re.search(r'\\begin\{etaremune\}(.+?)\\end\{etaremune\}', content, re.DOTALL)
-    if not match:
-        return items
-
-    list_content = match.group(1)
-
     # Split by item
     parts = re.split(r'\\item\s*', list_content)
 
@@ -210,6 +235,18 @@ def parse_etaremune(content: str) -> List[str]:
     return items
 
 
+def parse_etaremune(content: str) -> List[str]:
+    """Parse etaremune environment (reverse-numbered list) and return items."""
+    items = []
+
+    # Find ALL etaremune lists
+    for match in re.finditer(r'\\begin\{etaremune\}(.+?)\\end\{etaremune\}', content, re.DOTALL):
+        list_content = match.group(1)
+        items.extend(parse_single_etaremune(list_content))
+
+    return items
+
+
 def parse_multicol_etaremune(content: str) -> List[str]:
     """Parse multicol environment containing etaremune."""
     # Remove multicol wrapper
@@ -217,6 +254,28 @@ def parse_multicol_etaremune(content: str) -> List[str]:
     content = re.sub(r'\\end\{multicols\}', '', content)
 
     return parse_etaremune(content)
+
+
+def parse_labeled_lists(content: str) -> List[tuple]:
+    """Parse content with labeled lists like:
+    \\textit{Label}:
+    \\begin{etaremune}...\\end{etaremune}
+
+    Returns list of (label, items) tuples.
+    """
+    labeled_lists = []
+
+    # Pattern to find labeled lists: \textit{Label}: followed by etaremune
+    # Also handle multicols wrapper
+    pattern = r'\\textit\{([^}]+)\}:\s*(?:\\begin\{multicols\}\{\d+\})?\s*\\begin\{etaremune\}(.+?)\\end\{etaremune\}\s*(?:\\end\{multicols\})?'
+
+    for match in re.finditer(pattern, content, re.DOTALL):
+        label = match.group(1).strip()
+        list_content = match.group(2)
+        items = parse_single_etaremune(list_content)
+        labeled_lists.append((label, items))
+
+    return labeled_lists
 
 
 def extract_header_info(body: str) -> Dict[str, str]:
@@ -254,31 +313,56 @@ def extract_header_info(body: str) -> Dict[str, str]:
         else:
             rest_of_header = header
 
-        # Split by line breaks
-        parts = re.split(r'\\\\(?:\[[\d.]+cm\])?', rest_of_header)
-
+        # Split by line breaks, but track which ones have spacing
+        # Use a pattern that captures the spacing indicator
         lines = []
-        for part in parts:
-            # Remove LaTeX comments
-            part = re.sub(r'%.*$', '', part, flags=re.MULTILINE)
-            part = part.strip()
+        # Find all parts and their spacing
+        parts_with_spacing = re.split(r'(\\\\(?:\[[\d.]+cm\])?)', rest_of_header)
 
-            # Skip empty parts and stray braces
-            if part and part not in ['}', '{', '']:
-                converted = convert_latex_formatting(part)
-                converted = converted.strip()
-                # Skip empty results or just punctuation
+        current_text = ''
+        for i, part in enumerate(parts_with_spacing):
+            if re.match(r'\\\\(?:\[[\d.]+cm\])?', part):
+                # This is a line break - check if it has spacing
+                has_spacing = '[' in part and 'cm]' in part
+                if current_text.strip():
+                    # Remove LaTeX comments
+                    text = re.sub(r'%.*$', '', current_text, flags=re.MULTILINE).strip()
+                    if text and text not in ['}', '{', '']:
+                        converted = convert_latex_formatting(text).strip()
+                        if converted and converted not in ['}', '{', '']:
+                            lines.append({'text': converted, 'space_after': has_spacing})
+                current_text = ''
+            else:
+                current_text += part
+
+        # Handle last part
+        if current_text.strip():
+            text = re.sub(r'%.*$', '', current_text, flags=re.MULTILINE).strip()
+            if text and text not in ['}', '{', '']:
+                converted = convert_latex_formatting(text).strip()
                 if converted and converted not in ['}', '{', '']:
-                    lines.append(converted)
+                    lines.append({'text': converted, 'space_after': False})
 
         info['header_lines'] = lines
 
     return info
 
 
+def remove_latex_comments(text: str) -> str:
+    """Remove LaTeX comments from text."""
+    # Remove full-line comments
+    text = re.sub(r'^%.*$', '', text, flags=re.MULTILINE)
+    # Remove inline comments (but not escaped \%)
+    text = re.sub(r'(?<!\\)%.*$', '', text, flags=re.MULTILINE)
+    return text
+
+
 def extract_sections(body: str) -> List[CVSection]:
     """Extract all sections from the CV."""
     sections = []
+
+    # Remove comments BEFORE splitting to avoid commented-out subsections
+    body = remove_latex_comments(body)
 
     # Split by section* or section
     section_pattern = r'\\section\*?\{([^}]+)\}'
@@ -330,20 +414,99 @@ def render_list_items(items: List[str], reversed_numbering: bool = True) -> str:
     return html
 
 
+def render_labeled_lists(labeled_lists: List[tuple], use_two_column: bool = False) -> str:
+    """Render labeled lists (like Mentorship section) to HTML."""
+    html = ''
+    for label, items in labeled_lists:
+        html += f'<h4>{label}</h4>\n'
+        # Apply 2-column layout for Undergraduate Advisees or when explicitly requested
+        is_undergrad = 'undergraduate' in label.lower()
+        if (use_two_column or is_undergrad) and len(items) > 10:
+            html += f'<div class="two-column-list">{render_list_items(items)}</div>\n'
+        else:
+            html += render_list_items(items)
+    return html
+
+
+def extract_footnote(content: str) -> tuple:
+    """Extract blfootnote content from text. Returns (footnote_text, cleaned_content)."""
+    pattern = r'\\blfootnote\{'
+    match = re.search(pattern, content)
+    if not match:
+        return None, content
+
+    brace_pos = match.end() - 1
+    footnote_content, end_pos = balanced_braces_extract(content, brace_pos)
+    if footnote_content:
+        # Convert LaTeX formatting in footnote
+        footnote_html = convert_latex_formatting(footnote_content)
+        # Remove the footnote from content
+        cleaned = content[:match.start()] + content[end_pos:]
+        return footnote_html, cleaned
+    return None, content
+
+
+def preprocess_content(content: str, extract_footnotes: bool = False) -> tuple:
+    """Preprocess content to handle problematic LaTeX commands before parsing.
+
+    If extract_footnotes is True, returns (footnote, cleaned_content).
+    Otherwise returns just cleaned_content for backwards compatibility.
+    """
+    # Remove comments first
+    content = re.sub(r'^%.*$', '', content, flags=re.MULTILINE)
+    content = re.sub(r'(?<!\\)%.*$', '', content, flags=re.MULTILINE)
+
+    footnote = None
+    if extract_footnotes:
+        footnote, content = extract_footnote(content)
+    else:
+        # Remove blfootnote (with nested braces)
+        content = remove_command_with_braces(content, 'blfootnote')
+
+    # Remove vspace
+    content = remove_command_with_braces(content, 'vspace')
+
+    # Remove "Last updated: \today" line (handled in footer)
+    content = re.sub(r'\{\\scriptsize\s*Last updated:.*?\\today\s*\}', '', content, flags=re.DOTALL)
+    content = re.sub(r'Last updated:\s*$', '', content, flags=re.MULTILINE)
+
+    if extract_footnotes:
+        return footnote, content
+    return content
+
+
 def render_section_content(content: str, section_title: str) -> str:
     """Render section content to HTML based on section type."""
+
+    # Extract footnote first (for display as note under section header)
+    footnote, content = preprocess_content(content, extract_footnotes=True)
+
+    # Build HTML with optional footnote note
+    html_prefix = ''
+    if footnote:
+        html_prefix = f'<p class="section-note"><em>{footnote}</em></p>\n'
+
+    # Check for labeled lists (like in Mentorship section)
+    labeled_lists = parse_labeled_lists(content)
+    if labeled_lists:
+        # Check if this is the undergraduate advisees (use two-column)
+        use_two_col = 'undergraduate' in section_title.lower()
+        return html_prefix + render_labeled_lists(labeled_lists, use_two_column=use_two_col)
 
     # Check for etaremune lists
     if r'\begin{etaremune}' in content:
         if r'\begin{multicols}' in content:
             items = parse_multicol_etaremune(content)
             if 'talks' in section_title.lower() or 'undergraduate' in section_title.lower():
-                return f'<div class="two-column-list">{render_list_items(items)}</div>'
+                return html_prefix + f'<div class="two-column-list">{render_list_items(items)}</div>'
             else:
-                return render_list_items(items)
+                return html_prefix + render_list_items(items)
         else:
             items = parse_etaremune(content)
-            return render_list_items(items)
+            # Check if should be 2 columns based on section
+            if 'undergraduate' in section_title.lower():
+                return html_prefix + f'<div class="two-column-list">{render_list_items(items)}</div>'
+            return html_prefix + render_list_items(items)
 
     # For regular content, convert formatting
     content = convert_latex_formatting(content)
@@ -351,10 +514,13 @@ def render_section_content(content: str, section_title: str) -> str:
     # Split into paragraphs
     paragraphs = re.split(r'\n\s*\n', content)
 
-    html = ''
+    html = html_prefix
     for para in paragraphs:
         para = para.strip()
         if para:
+            # Skip empty-looking content or raw LaTeX remnants
+            if para in ['}', '{', ''] or para.startswith('\\'):
+                continue
             if not para.startswith('<'):
                 html += f'<p>{para}</p>\n'
             else:
@@ -382,7 +548,10 @@ def generate_html(tex_content: str) -> str:
 </head>
 <body>
     <div class="cv-download-bar">
-        <a href="JRM_CV.pdf" class="download-button" download>Download CV as PDF</a>
+        <div class="bar-content">
+            <span class="cv-title">Curriculum Vitae</span>
+            <a href="JRM_CV.pdf" class="download-btn" download>Download PDF</a>
+        </div>
     </div>
 
     <div class="cv-content">
@@ -394,9 +563,14 @@ def generate_html(tex_content: str) -> str:
         html_parts.append(f'            <h1>{header_info["name"]}</h1>\n')
     if 'header_lines' in header_info:
         html_parts.append('            <div class="contact-info">\n')
-        for line in header_info['header_lines']:
-            if line.strip():
-                html_parts.append(f'                <p>{line}</p>\n')
+        for line_info in header_info['header_lines']:
+            if isinstance(line_info, dict):
+                text = line_info['text']
+                space_class = ' class="space-after"' if line_info.get('space_after') else ''
+                if text.strip():
+                    html_parts.append(f'                <p{space_class}>{text}</p>\n')
+            elif line_info.strip():  # Backwards compatibility
+                html_parts.append(f'                <p>{line_info}</p>\n')
         html_parts.append('            </div>\n')
     html_parts.append('        </header>\n\n')
 
@@ -413,10 +587,13 @@ def generate_html(tex_content: str) -> str:
                 html_parts.append(f'            {rendered}\n')
 
             for subsection in section.subsections:
+                rendered = render_section_content(subsection.content, subsection.title)
+                # Skip empty subsections
+                if not rendered.strip():
+                    continue
                 sub_id = re.sub(r'[^a-z0-9]+', '-', subsection.title.lower()).strip('-')
                 html_parts.append(f'            <div class="subsection" id="{sub_id}">\n')
                 html_parts.append(f'                <h3>{subsection.title}</h3>\n')
-                rendered = render_section_content(subsection.content, subsection.title)
                 html_parts.append(f'                {rendered}\n')
                 html_parts.append('            </div>\n')
         else:
