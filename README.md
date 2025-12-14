@@ -25,7 +25,9 @@ contextlab.github.io/
 │   ├── publications/   # Publication thumbnails
 │   └── software/       # Software project images
 ├── documents/
-│   └── JRM_CV.pdf      # Jeremy Manning's CV
+│   ├── JRM_CV.tex      # CV LaTeX source (edit this!)
+│   ├── JRM_CV.pdf      # Generated PDF (auto-built)
+│   └── JRM_CV.html     # Generated HTML (auto-built)
 ├── data/               # Content source files (edit these!)
 │   ├── publications.xlsx
 │   ├── people.xlsx
@@ -35,7 +37,9 @@ contextlab.github.io/
 │   ├── people.html
 │   └── software.html
 ├── scripts/            # Build and validation scripts
-│   ├── build.py
+│   ├── build.py        # Content page builder
+│   ├── build_cv.py     # CV build orchestration
+│   ├── extract_cv.py   # LaTeX-to-HTML parser
 │   └── ...
 └── tests/              # Automated tests
     └── ...
@@ -271,6 +275,119 @@ You can also manually trigger a build from the [Actions tab](https://github.com/
 - **Image files**: Place images in the appropriate `images/` subdirectory before referencing them
 - **Validation**: Run `python scripts/validate_data.py` to check for missing required fields or broken image references
 - **Don't edit generated HTML**: Changes to `publications.html`, `people.html`, and `software.html` in the root directory will be overwritten by the build system
+
+---
+
+## CV Auto-Generation
+
+Jeremy Manning's CV is automatically compiled from LaTeX source into both PDF and HTML formats. The HTML version matches the PDF styling and includes a download button.
+
+### How It Works
+
+```
+documents/
+├── JRM_CV.tex          # LaTeX source (edit this!)
+├── JRM_CV.pdf          # Generated PDF
+└── JRM_CV.html         # Generated HTML
+
+scripts/
+├── build_cv.py         # Build orchestration
+└── extract_cv.py       # Custom LaTeX-to-HTML parser
+
+css/
+└── cv.css              # CV-specific stylesheet
+
+data/
+└── DartmouthRuzicka-*.ttf  # Dartmouth Ruzicka fonts
+
+.github/workflows/
+└── build-cv.yml        # GitHub Actions automation
+```
+
+### Updating the CV
+
+1. Edit `documents/JRM_CV.tex` in any LaTeX editor
+2. Push to GitHub - the CV will be automatically rebuilt
+3. Both PDF and HTML versions are generated and committed
+
+### Building Locally
+
+```bash
+# Install dependencies
+pip install -r requirements-build.txt
+
+# Build CV (requires XeLaTeX)
+cd scripts
+python build_cv.py
+
+# Run tests
+python -m pytest tests/test_build_cv.py -v
+```
+
+### Custom LaTeX Parser
+
+The `extract_cv.py` script provides a custom LaTeX-to-HTML converter that handles:
+
+- **Text formatting**: `\textbf`, `\textit`, `\emph`, `\textsc`, `\ul`
+- **Links**: `\href{url}{text}` → `<a href="url">text</a>`
+- **Lists**: `etaremune` (reverse-numbered), `itemize`, `enumerate`
+- **Multi-column**: `\begin{multicols}{2}` → CSS two-column layout
+- **Sections**: `\section*`, `\subsection*` → semantic HTML headings
+- **Special characters**: em-dashes, en-dashes, quotes, accented characters
+- **Footnotes**: `\blfootnote{}` → section notes displayed inline
+- **Block spacing**: `\\[0.1cm]` → visual block separators
+
+### Key Functions in extract_cv.py
+
+| Function | Purpose |
+|----------|---------|
+| `extract_document_body()` | Extract content between `\begin{document}` and `\end{document}` |
+| `balanced_braces_extract()` | Parse nested LaTeX braces correctly |
+| `convert_latex_formatting()` | Convert LaTeX commands to HTML |
+| `parse_etaremune()` | Parse reverse-numbered publication lists |
+| `extract_header_info()` | Extract name and contact information |
+| `extract_sections()` | Split document into sections/subsections |
+| `render_section_content()` | Convert section content based on type |
+| `generate_html()` | Assemble complete HTML document |
+
+### CV Stylesheet (cv.css)
+
+The stylesheet provides:
+
+- **Dartmouth Ruzicka font** via `@font-face` declarations
+- **Dartmouth green** color scheme: `rgb(0, 105, 62)`
+- **Sticky download bar** at top of page
+- **Responsive design** for tablet and mobile
+- **Print styles** that match PDF appearance
+- **Reverse-numbered lists** using native `<ol reversed>` support
+
+### Automatic Builds (GitHub Actions)
+
+The `build-cv.yml` workflow triggers when you push changes to:
+- `documents/JRM_CV.tex`
+- `scripts/build_cv.py` or `scripts/extract_cv.py`
+- `css/cv.css`
+- `.github/workflows/build-cv.yml`
+
+The workflow:
+1. Installs TeX Live and Dartmouth Ruzicka fonts
+2. Compiles LaTeX to PDF using XeLaTeX
+3. Converts LaTeX to HTML using the custom parser
+4. Runs 61 automated tests
+5. Commits and pushes the generated files
+
+### Testing
+
+The test suite (`tests/test_build_cv.py`) includes 61 tests covering:
+
+- LaTeX formatting conversion
+- Balanced brace parsing
+- Section extraction
+- HTML generation
+- PDF compilation
+- Content validation
+- Link validation
+- Edge cases
 
 ---
 
