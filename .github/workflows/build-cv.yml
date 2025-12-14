@@ -1,0 +1,76 @@
+name: Build CV
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'documents/JRM_CV.tex'
+      - 'scripts/build_cv.py'
+      - 'scripts/extract_cv.py'
+      - 'css/cv.css'
+      - '.github/workflows/build-cv.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'documents/JRM_CV.tex'
+      - 'scripts/build_cv.py'
+      - 'scripts/extract_cv.py'
+      - 'css/cv.css'
+      - '.github/workflows/build-cv.yml'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  build-cv:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install TeX Live
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y texlive-xetex texlive-fonts-extra texlive-latex-extra
+
+      - name: Install Dartmouth Ruzicka font
+        run: |
+          mkdir -p ~/.fonts
+          cp data/DartmouthRuzicka-*.ttf ~/.fonts/
+          fc-cache -fv
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'requirements-build.txt'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements-build.txt
+
+      - name: Build CV (PDF and HTML)
+        working-directory: scripts
+        run: python build_cv.py
+
+      - name: Run CV tests
+        run: python -m pytest tests/test_build_cv.py -v
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if [[ -n $(git status --porcelain documents/JRM_CV.pdf documents/JRM_CV.html) ]]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push changes
+        if: github.event_name == 'push' && steps.check_changes.outputs.changes == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add documents/JRM_CV.pdf documents/JRM_CV.html
+          git diff --staged --quiet || git commit -m "Auto-build: Update CV PDF and HTML from LaTeX source"
+          git push
