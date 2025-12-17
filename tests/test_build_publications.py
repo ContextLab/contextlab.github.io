@@ -90,18 +90,20 @@ class TestGeneratePublicationCard:
             'image': 'test.png',
             'title': 'Test Paper',
             'title_url': 'http://example.com',
-            'citation': 'Author (2024) Test Paper',
-            'links_html': '[<a href="#">PDF</a>]'
+            'authors': 'Author A',
+            'year': '2024',
+            'journal': 'Journal',
+            'pdf_link': 'http://example.com/pdf'
         }
 
-        html = generate_publication_card(pub)
+        html = generate_publication_card(pub, 'papers')
 
         assert '<div class="publication-card">' in html
         assert 'images/publications/test.png' in html
         assert 'Test Paper' in html
         assert 'http://example.com' in html
-        assert 'Author (2024) Test Paper' in html
-        assert '[<a href="#">PDF</a>]' in html
+        assert 'Author A' in html
+        assert '2024' in html
 
     def test_handles_no_url(self):
         """Test card with no title URL."""
@@ -109,11 +111,12 @@ class TestGeneratePublicationCard:
             'image': 'test.png',
             'title': 'Test Paper',
             'title_url': '',
-            'citation': 'Citation',
-            'links_html': ''
+            'authors': 'Author',
+            'year': '2024',
+            'journal': 'Journal'
         }
 
-        html = generate_publication_card(pub)
+        html = generate_publication_card(pub, 'papers')
 
         assert '<h4>Test Paper</h4>' in html
         assert 'href=' not in html.split('<h4>')[1].split('</h4>')[0]
@@ -124,25 +127,30 @@ class TestGeneratePublicationCard:
             'image': 'test.png',
             'title': 'Test Paper',
             'title_url': '',
-            'citation': 'Citation',
-            'links_html': ''
+            'authors': 'Author',
+            'year': '2024',
+            'journal': 'Journal'
         }
 
-        html = generate_publication_card(pub)
+        html = generate_publication_card(pub, 'papers')
 
         assert 'publication-links' not in html
 
-    def test_preserves_html_in_citation(self):
-        """Test that HTML in citation is preserved."""
+    def test_generates_citation_with_journal(self):
+        """Test that citation includes journal in italics."""
         pub = {
             'image': 'test.png',
             'title': 'Test',
             'title_url': '',
-            'citation': 'Author (2024) <em>Journal Name</em>, 1(1): 1-10.',
-            'links_html': ''
+            'authors': 'Author',
+            'year': '2024',
+            'journal': 'Journal Name',
+            'volume': '1',
+            'issue': '1',
+            'pages': '1-10'
         }
 
-        html = generate_publication_card(pub)
+        html = generate_publication_card(pub, 'papers')
 
         assert '<em>Journal Name</em>' in html
 
@@ -153,11 +161,11 @@ class TestGenerateSectionContent:
     def test_generates_multiple_cards(self):
         """Test generating content with multiple publications."""
         pubs = [
-            {'image': 'a.png', 'title': 'Paper A', 'title_url': '', 'citation': 'A', 'links_html': ''},
-            {'image': 'b.png', 'title': 'Paper B', 'title_url': '', 'citation': 'B', 'links_html': ''},
+            {'image': 'a.png', 'title': 'Paper A', 'title_url': '', 'authors': 'A', 'year': '2024', 'journal': 'J'},
+            {'image': 'b.png', 'title': 'Paper B', 'title_url': '', 'authors': 'B', 'year': '2024', 'journal': 'J'},
         ]
 
-        html = generate_section_content(pubs)
+        html = generate_section_content(pubs, 'papers')
 
         assert html.count('publication-card') == 2
         assert 'Paper A' in html
@@ -165,7 +173,7 @@ class TestGenerateSectionContent:
 
     def test_handles_empty_list(self):
         """Test generating content with no publications."""
-        html = generate_section_content([])
+        html = generate_section_content([], 'papers')
 
         assert html == ''
 
@@ -188,11 +196,20 @@ class TestBuildPublications:
 
         for sheet_name in ['papers', 'chapters', 'dissertations', 'talks', 'courses', 'posters']:
             ws = wb.create_sheet(title=sheet_name)
-            ws.append(['image', 'title', 'title_url', 'citation', 'links_html'])
             if sheet_name == 'papers':
+                ws.append(['image', 'title', 'title_url', 'authors', 'year', 'journal', 'volume', 'pages'])
                 ws.append(['paper.png', 'Test Paper', 'http://example.com',
-                          'Author (2024) Test Paper. <em>Journal</em>.',
-                          '[<a href="#">PDF</a>]'])
+                          'Author A', '2024', 'Journal Name', '1', '1-10'])
+            elif sheet_name == 'chapters':
+                ws.append(['image', 'title', 'title_url', 'authors', 'year', 'editors', 'book_title', 'publisher'])
+            elif sheet_name == 'dissertations':
+                ws.append(['image', 'title', 'title_url', 'authors', 'year', 'degree_type', 'institution', 'location'])
+            elif sheet_name == 'talks':
+                ws.append(['image', 'title', 'title_url', 'authors', 'year', 'venue_name'])
+            elif sheet_name == 'courses':
+                ws.append(['image', 'title', 'title_url', 'description'])
+            elif sheet_name == 'posters':
+                ws.append(['image', 'title', 'title_url', 'authors', 'year', 'conference', 'location'])
 
         wb.save(xlsx_path)
 
@@ -218,7 +235,7 @@ class TestBuildPublications:
         result = output_path.read_text()
         assert 'Test Paper' in result
         assert 'paper.png' in result
-        assert '<em>Journal</em>' in result
+        assert '<em>Journal Name</em>' in result
 
     def test_handles_special_characters(self, temp_dir):
         """Test that special characters are preserved."""
@@ -228,10 +245,20 @@ class TestBuildPublications:
 
         for sheet_name in ['papers', 'chapters', 'dissertations', 'talks', 'courses', 'posters']:
             ws = wb.create_sheet(title=sheet_name)
-            ws.append(['image', 'title', 'title_url', 'citation', 'links_html'])
             if sheet_name == 'papers':
+                ws.append(['image', 'title', 'title_url', 'authors', 'year', 'journal'])
                 ws.append(['test.png', "Paper & O'Brien's \"quoted\"", '',
-                          "Author & O'Brien (2024)", ''])
+                          "Author & O'Brien", '2024', 'Journal'])
+            elif sheet_name == 'chapters':
+                ws.append(['image', 'title', 'title_url', 'authors', 'year', 'editors', 'book_title', 'publisher'])
+            elif sheet_name == 'dissertations':
+                ws.append(['image', 'title', 'title_url', 'authors', 'year', 'degree_type', 'institution', 'location'])
+            elif sheet_name == 'talks':
+                ws.append(['image', 'title', 'title_url', 'authors', 'year', 'venue_name'])
+            elif sheet_name == 'courses':
+                ws.append(['image', 'title', 'title_url', 'description'])
+            elif sheet_name == 'posters':
+                ws.append(['image', 'title', 'title_url', 'authors', 'year', 'conference', 'location'])
 
         wb.save(xlsx_path)
 
