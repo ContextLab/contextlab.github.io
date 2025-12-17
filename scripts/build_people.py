@@ -10,6 +10,80 @@ from typing import List, Dict, Any
 import openpyxl
 
 from utils import inject_content
+from citation_utils import resolve_link
+
+
+def parse_links_field(links_str: str) -> str:
+    """Parse links field into HTML.
+
+    Format: 'Label:URL, "Quoted Label":URL, ...'
+    - Comma-separated pairs of label:url
+    - Labels can be quoted for labels with spaces
+    - URLs are resolved (local paths converted to GitHub URLs)
+
+    Args:
+        links_str: Links string in the format 'Label:URL, "Label":URL'
+
+    Returns:
+        HTML string like '[<a href="...">Label</a>] [<a href="...">Label</a>]'
+    """
+    if not links_str:
+        return ''
+
+    links = []
+    # Parse the links string - handle both quoted and unquoted labels
+    # Pattern: either "quoted label":url or label:url, separated by commas
+    remaining = links_str.strip()
+
+    while remaining:
+        remaining = remaining.lstrip(' ,')
+        if not remaining:
+            break
+
+        if remaining.startswith('"'):
+            # Quoted label
+            end_quote = remaining.find('"', 1)
+            if end_quote == -1:
+                break
+            label = remaining[1:end_quote]
+            rest = remaining[end_quote + 1:].lstrip()
+            if rest.startswith(':'):
+                rest = rest[1:]
+            # Find end of URL (next comma or end of string)
+            comma_pos = rest.find(',')
+            if comma_pos == -1:
+                url = rest.strip()
+                remaining = ''
+            else:
+                url = rest[:comma_pos].strip()
+                remaining = rest[comma_pos + 1:]
+            links.append((label, url))
+        else:
+            # Unquoted label - split on first colon
+            colon_pos = remaining.find(':')
+            if colon_pos == -1:
+                break
+            label = remaining[:colon_pos].strip()
+            rest = remaining[colon_pos + 1:]
+            # Find end of URL - but URL may contain colons (https://)
+            # So find the next comma that's not part of a URL
+            comma_pos = rest.find(',')
+            if comma_pos == -1:
+                url = rest.strip()
+                remaining = ''
+            else:
+                url = rest[:comma_pos].strip()
+                remaining = rest[comma_pos + 1:]
+            links.append((label, url))
+
+    # Build HTML
+    parts = []
+    for label, url in links:
+        if url:
+            resolved_url = resolve_link(url, base_path="documents")
+            parts.append(f'[<a href="{resolved_url}" target="_blank">{label}</a>]')
+
+    return ' '.join(parts)
 
 
 def load_people(xlsx_path: Path) -> Dict[str, List[Dict[str, Any]]]:
@@ -65,7 +139,7 @@ def generate_director_content(director: Dict[str, Any]) -> str:
     name_url = director.get('name_url', '')
     role = director.get('role', '')
     bio = director.get('bio', '')
-    links_html = director.get('links_html', '')
+    links_field = director.get('links_html', '')
 
     # Build image path
     image_src = f"images/people/{image}" if image else ""
@@ -79,7 +153,8 @@ def generate_director_content(director: Dict[str, Any]) -> str:
     # Build role display
     role_display = f' | {role}' if role else ''
 
-    # Build links paragraph
+    # Parse links field into HTML
+    links_html = parse_links_field(links_field)
     links_p = f'\n                    <p>{links_html}</p>' if links_html else ''
 
     html = f'''            <div class="two-column lab-director">

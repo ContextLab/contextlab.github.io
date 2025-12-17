@@ -429,6 +429,73 @@ The test suite (`tests/test_build_cv.py`) includes 61 tests covering:
 1. Add screenshot to `images/software/`
 2. Edit `software.html`, add to software grid
 
+## Adding Hand-Drawn Borders to Images
+
+Poster thumbnails and people photos use hand-drawn green borders for visual consistency. Use the `add_poster_borders.py` script to add these borders to new images.
+
+### Border Script Usage
+
+```bash
+# Basic usage
+python scripts/add_poster_borders.py <input_dir> <output_dir>
+
+# Example: Process new poster images
+python scripts/add_poster_borders.py images/publications/new/ images/publications/
+
+# Example: Process a single image (copy to temp folder first)
+mkdir temp_input
+cp images/publications/MyPoster.png temp_input/
+python scripts/add_poster_borders.py temp_input/ temp_output/
+mv temp_output/MyPoster.png images/publications/MyPoster.png
+rm -rf temp_input temp_output
+```
+
+### How It Works
+
+The script:
+1. Loads 10 hand-drawn border designs from `images/templates/WebsiteDoodles_Posters_v1.svg`
+2. For each input PNG, selects a random border
+3. Resizes the image to fit inside the border frame (poster extends to middle of border lines)
+4. Composites the border on top of the image
+5. Makes areas outside the border transparent
+6. Outputs a 500x500 PNG with ~41px transparent margins
+
+### Adding New Poster Thumbnails
+
+1. Create a thumbnail PNG of the poster (any size, will be resized)
+2. Place in a temporary input folder
+3. Run the border script
+4. Move the output to `images/publications/`
+5. Update `data/publications.xlsx` with the image filename
+
+### Adding New People Photos
+
+1. Prepare the photo as a PNG (square crop recommended)
+2. Place in a temporary input folder
+3. Run the border script
+4. Move the output to `images/people/`
+5. Update `data/people.xlsx` with the image filename
+
+### Script Options
+
+```bash
+python scripts/add_poster_borders.py --help
+
+Options:
+  input_dir       Directory containing input PNG files
+  output_dir      Directory to save output files
+  --border-svg    Path to SVG with border designs (default: images/templates/WebsiteDoodles_Posters_v1.svg)
+  --output-size   Output image size in pixels (default: 500)
+```
+
+### Requirements
+
+The script requires:
+- Python 3
+- PIL/Pillow
+- NumPy
+- `rsvg-convert` (from librsvg, install via `brew install librsvg` on macOS)
+
 ## Mobile Responsiveness
 
 The site is fully responsive with breakpoints at:
