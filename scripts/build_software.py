@@ -3,12 +3,22 @@
 
 Reads data from data/software.xlsx and generates software.html
 using the template in templates/software.html.
+
+The spreadsheet uses structured fields for each software item:
+- name: Software name
+- description: Software description (supports markdown/HTML)
+- github_link: GitHub repository URL
+- pypi_link: PyPI package URL
+- docs_link: Documentation URL
+- fileexchange_link: MATLAB File Exchange URL
+- extra_links: Additional links in format "Label1:URL1;Label2:URL2"
 """
 from pathlib import Path
 from typing import List, Dict, Any
 import openpyxl
 
 from utils import inject_content
+from citation_utils import markdown_to_html, resolve_link, build_links_html
 
 
 def load_software(xlsx_path: Path) -> Dict[str, List[Dict[str, Any]]]:
@@ -41,7 +51,7 @@ def load_software(xlsx_path: Path) -> Dict[str, List[Dict[str, Any]]]:
                 if value is None:
                     row_dict[header] = ''
                 else:
-                    row_dict[header] = value
+                    row_dict[header] = str(value) if not isinstance(value, str) else value
             rows.append(row_dict)
 
         data[sheet_name] = rows
@@ -50,18 +60,59 @@ def load_software(xlsx_path: Path) -> Dict[str, List[Dict[str, Any]]]:
     return data
 
 
+def parse_extra_links(extra_links: str) -> List[tuple]:
+    """Parse extra_links field into list of (label, url) tuples.
+
+    Format: "Label1:URL1;Label2:URL2"
+    """
+    if not extra_links:
+        return []
+
+    links = []
+    for part in extra_links.split(';'):
+        if ':' in part:
+            # Split on first colon only (URLs contain colons)
+            label, url = part.split(':', 1)
+            links.append((label.strip(), url.strip()))
+    return links
+
+
+def build_links_for_software(item: Dict[str, Any]) -> str:
+    """Build links HTML for a software item."""
+    links = []
+
+    if item.get('github_link'):
+        links.append(('GitHub', item['github_link']))
+    if item.get('pypi_link'):
+        links.append(('PyPI', item['pypi_link']))
+    if item.get('docs_link'):
+        links.append(('Docs', item['docs_link']))
+    if item.get('fileexchange_link'):
+        links.append(('MATLAB Central File Exchange', item['fileexchange_link']))
+
+    # Add extra links
+    links.extend(parse_extra_links(item.get('extra_links', '')))
+
+    return build_links_html(links)
+
+
 def generate_software_item(item: Dict[str, Any]) -> str:
     """Generate HTML for a single software item.
 
     Args:
-        item: Dictionary with software data (name, description, links_html)
+        item: Dictionary with software data
 
     Returns:
         HTML string for the software item paragraph
     """
     name = item.get('name', '')
     description = item.get('description', '')
-    links_html = item.get('links_html', '')
+
+    # Convert markdown to HTML in description
+    description = markdown_to_html(description)
+
+    # Build links HTML
+    links_html = build_links_for_software(item)
 
     # Build the paragraph
     parts = []

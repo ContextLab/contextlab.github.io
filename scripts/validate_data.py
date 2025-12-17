@@ -19,6 +19,9 @@ def validate_publications(project_root: Path) -> List[str]:
     """Validate publications.xlsx data.
 
     Returns list of error messages (empty if valid).
+
+    Note: Citations are now built from structured fields (authors, year, title, etc.)
+    rather than a single 'citation' column. Only 'title' is required.
     """
     errors = []
     xlsx_path = project_root / 'data' / 'publications.xlsx'
@@ -33,7 +36,8 @@ def validate_publications(project_root: Path) -> List[str]:
         errors.append(f"Error loading {xlsx_path}: {e}")
         return errors
 
-    required_fields = ['title', 'citation']
+    # Only title is required - citations are built from structured fields
+    required_fields = ['title']
     image_dir = project_root / 'images' / 'publications'
 
     for sheet_name, items in data.items():
@@ -44,9 +48,10 @@ def validate_publications(project_root: Path) -> List[str]:
                 if not val or (isinstance(val, str) and not val.strip()):
                     errors.append(f"publications/{sheet_name} row {i}: missing {field}")
 
-            # Check URL format (validate_url_format returns True if valid)
+            # Check URL format - allow local file paths (data/pdfs/...) which get
+            # converted to GitHub URLs by the build script
             url = item.get('title_url', '')
-            if url and not validate_url_format(url):
+            if url and not validate_url_format(url) and not url.startswith('data/'):
                 errors.append(f"publications/{sheet_name} row {i}: invalid URL '{url}'")
 
             # Check image file exists (check_file_exists returns error msg or None)

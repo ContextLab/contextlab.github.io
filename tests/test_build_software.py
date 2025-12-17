@@ -85,7 +85,7 @@ class TestGenerateSoftwareItem:
         item = {
             'name': 'MyTool',
             'description': 'Does something useful.',
-            'links_html': '[<a href="#">GitHub</a>]'
+            'github_link': 'https://github.com/example/mytool'
         }
 
         html = generate_software_item(item)
@@ -94,7 +94,8 @@ class TestGenerateSoftwareItem:
         assert '</p>' in html
         assert '<strong>MyTool.</strong>' in html
         assert 'Does something useful.' in html
-        assert '[<a href="#">GitHub</a>]' in html
+        assert 'GitHub' in html
+        assert 'https://github.com/example/mytool' in html
 
     def test_handles_missing_links(self):
         """Test item without links."""

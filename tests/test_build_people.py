@@ -95,7 +95,7 @@ class TestGenerateDirectorContent:
             'name_url': '',
             'role': 'lab director',
             'bio': 'Bio paragraph here.',
-            'links_html': '[<a href="#">CV</a>]'
+            'links_html': 'CV:http://example.com/cv'
         }
 
         html = generate_director_content(director)
@@ -105,7 +105,8 @@ class TestGenerateDirectorContent:
         assert 'jeremy manning' in html
         assert 'lab director' in html
         assert 'Bio paragraph here.' in html
-        assert '[<a href="#">CV</a>]' in html
+        assert 'CV' in html
+        assert 'http://example.com/cv' in html
 
     def test_handles_no_links(self):
         """Test director without links."""
