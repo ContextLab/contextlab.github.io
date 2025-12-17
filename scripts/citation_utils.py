@@ -13,6 +13,7 @@ from pathlib import Path
 
 # GitHub repository URL for the project
 GITHUB_REPO_URL = "https://github.com/ContextLab/contextlab.github.io/blob/main"
+GITHUB_PAGES_URL = "https://contextlab.github.io"
 
 
 def markdown_to_html(text: str) -> str:
@@ -58,8 +59,9 @@ def resolve_link(link: str, base_path: str = "data/pdfs") -> str:
     """Resolve a link to a full URL.
 
     If the link is already a URL (http/https), return it as-is.
-    If the link is a path (contains /), convert to GitHub URL.
-    If the link is just a filename, prepend base_path and convert to GitHub URL.
+    If the link is a local path:
+      - HTML files use GitHub Pages URL (so they render as webpages)
+      - Other files use GitHub blob URL (for viewing/downloading)
 
     Args:
         link: URL or filename or path
@@ -80,12 +82,18 @@ def resolve_link(link: str, base_path: str = "data/pdfs") -> str:
     # Remove leading slash if present
     link = link.lstrip('/')
 
-    # If it's already a path (contains /), use it directly
+    # Determine the full path
     if '/' in link:
-        return f"{GITHUB_REPO_URL}/{link}"
+        full_path = link
+    else:
+        full_path = f"{base_path}/{link}"
 
-    # Just a filename - prepend base path
-    return f"{GITHUB_REPO_URL}/{base_path}/{link}"
+    # HTML files should use GitHub Pages URL so they render as webpages
+    if full_path.endswith('.html'):
+        return f"{GITHUB_PAGES_URL}/{full_path}"
+
+    # Other files use GitHub blob URL
+    return f"{GITHUB_REPO_URL}/{full_path}"
 
 
 def build_links_html(links: List[Tuple[str, str]], base_path: str = "data/pdfs") -> str:
