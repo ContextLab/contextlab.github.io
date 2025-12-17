@@ -992,22 +992,18 @@ body.homepage main {
     width: 100%;
     height: 100%;
     max-width: 1200px;
-    padding: 0 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    padding: 40px;
 }
 
 .brain-wrapper {
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    top: calc(50% - 20px); /* Offset up to visually center in the green area above the menu */
+    left: 50%;
+    transform: translate(-50%, -50%);
+    transition: left 0.27s ease, transform 0.27s ease, top 0.27s ease;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.27s ease;
 }
 
 .brain-image {
@@ -1070,9 +1066,8 @@ body.info-transitioning .brain-image {
 
 /* Info Panel Active State - Gallery View */
 body.info-active .brain-wrapper {
-    right: 50%;
-    justify-content: flex-end;
-    padding-right: 5%;
+    left: 27%;
+    top: 50%;
 }
 
 body.info-active .brain-image {
