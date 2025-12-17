@@ -997,7 +997,7 @@ body.homepage main {
 
 .brain-wrapper {
     position: absolute;
-    top: calc(50% - 20px); /* Offset up to visually center in the green area above the menu */
+    top: calc(50% - 5vh); /* Offset up to visually center in the green area above the menu */
     left: 50%;
     transform: translate(-50%, -50%);
     transition: left 0.27s ease, transform 0.27s ease, top 0.27s ease;
