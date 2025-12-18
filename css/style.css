@@ -1697,6 +1697,12 @@ body.homepage .site-header {
         margin: 0 auto 20px;
     }
 
+    /* Jump links - allow wrapping on mobile */
+    .jump-links {
+        white-space: normal;
+        line-height: 1.8;
+    }
+
     /* Footer navigation - mobile layout (hamburger menu style) */
     .footer-nav {
         padding: 12px 0;
