@@ -165,6 +165,70 @@ def validate_software(project_root: Path) -> List[str]:
     return errors
 
 
+def validate_news(project_root: Path) -> List[str]:
+    """Validate news.xlsx data.
+
+    Returns list of error messages (empty if valid).
+    """
+    errors = []
+    xlsx_path = project_root / 'data' / 'news.xlsx'
+
+    if not xlsx_path.exists():
+        errors.append(f"Missing file: {xlsx_path}")
+        return errors
+
+    try:
+        # Load single sheet spreadsheet
+        import openpyxl
+        wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
+        sheet = wb.active
+        headers = [cell.value for cell in sheet[1]]
+
+        items = []
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if not any(cell is not None for cell in row):
+                continue
+            row_dict = {}
+            for header, value in zip(headers, row):
+                row_dict[header] = value if value is not None else ''
+            items.append(row_dict)
+        wb.close()
+    except Exception as e:
+        errors.append(f"Error loading {xlsx_path}: {e}")
+        return errors
+
+    image_dir = project_root / 'images' / 'news'
+
+    for i, item in enumerate(items, 1):
+        # Check required fields
+        if not item.get('title'):
+            errors.append(f"news row {i}: missing title")
+        if not item.get('content'):
+            errors.append(f"news row {i}: missing content")
+
+        # Check URL format if title_url is provided
+        # Allow local file paths (like people.html) and data/ paths
+        url = item.get('title_url', '')
+        if url and not validate_url_format(url) and not url.endswith('.html') and not url.startswith('data/'):
+            errors.append(f"news row {i}: invalid URL '{url}'")
+
+        # Check image file exists
+        if item.get('image'):
+            file_error = check_file_exists(item['image'], image_dir)
+            if file_error:
+                errors.append(f"news row {i}: {file_error}")
+
+        # Validate date format if provided
+        date_val = item.get('date', '')
+        if date_val:
+            import re
+            date_str = str(date_val)
+            if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+                errors.append(f"news row {i}: invalid date format '{date_str}' (expected YYYY-MM-DD)")
+
+    return errors
+
+
 def validate_templates(project_root: Path) -> List[str]:
     """Validate that all required templates exist.
 
@@ -176,7 +240,8 @@ def validate_templates(project_root: Path) -> List[str]:
     required_templates = [
         'publications.html',
         'people.html',
-        'software.html'
+        'software.html',
+        'news.html'
     ]
 
     for template in required_templates:
@@ -235,6 +300,16 @@ def main():
         all_errors.extend(sw_errors)
     else:
         print("Software: OK")
+
+    # Validate news
+    news_errors = validate_news(project_root)
+    if news_errors:
+        print("\nNews errors:")
+        for error in news_errors:
+            print(f"  - {error}")
+        all_errors.extend(news_errors)
+    else:
+        print("News: OK")
 
     # Summary
     print("\n" + "=" * 50)

@@ -10,6 +10,7 @@ from pathlib import Path
 from build_publications import build_publications
 from build_people import build_people
 from build_software import build_software
+from build_news import build_news
 
 
 def main():
@@ -54,6 +55,17 @@ def main():
         results.append(('software.html', 'OK'))
     except Exception as e:
         results.append(('software.html', f'FAILED: {e}'))
+
+    # Build news.html
+    try:
+        build_news(
+            data_dir / 'news.xlsx',
+            templates_dir / 'news.html',
+            project_root / 'news.html'
+        )
+        results.append(('news.html', 'OK'))
+    except Exception as e:
+        results.append(('news.html', f'FAILED: {e}'))
 
     # Print summary
     print("\n" + "=" * 50)
