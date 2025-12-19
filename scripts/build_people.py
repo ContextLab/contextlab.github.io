@@ -141,8 +141,8 @@ def generate_director_content(director: Dict[str, Any]) -> str:
     bio = director.get('bio', '')
     links_field = director.get('links_html', '')
 
-    # Build image path
-    image_src = f"images/people/{image}" if image else ""
+    # Build image path (use placeholder if not specified)
+    image_src = f"images/people/{image}" if image else "images/people/placeholder.png"
 
     # Build name with optional link
     if name_url:
@@ -185,8 +185,8 @@ def generate_member_card(member: Dict[str, Any]) -> str:
     role = member.get('role', '')
     bio = member.get('bio', '')
 
-    # Build image path
-    image_src = f"images/people/{image}" if image else ""
+    # Build image path (use placeholder if not specified)
+    image_src = f"images/people/{image}" if image else "images/people/placeholder.png"
 
     # Build name with optional link
     if name_url:
