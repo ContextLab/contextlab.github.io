@@ -431,21 +431,21 @@ The test suite (`tests/test_build_cv.py`) includes 61 tests covering:
 
 ## Adding Hand-Drawn Borders to Images
 
-Poster thumbnails and people photos use hand-drawn green borders for visual consistency. Use the `add_poster_borders.py` script to add these borders to new images.
+Poster thumbnails and people photos use hand-drawn green borders for visual consistency. Use the `add_borders.py` script to add these borders to new images.
 
 ### Border Script Usage
 
 ```bash
 # Basic usage
-python scripts/add_poster_borders.py <input_dir> <output_dir>
+python scripts/add_borders.py <input_dir> <output_dir>
 
 # Example: Process new poster images
-python scripts/add_poster_borders.py images/publications/new/ images/publications/
+python scripts/add_borders.py images/publications/new/ images/publications/
 
 # Example: Process a single image (copy to temp folder first)
 mkdir temp_input
 cp images/publications/MyPoster.png temp_input/
-python scripts/add_poster_borders.py temp_input/ temp_output/
+python scripts/add_borders.py temp_input/ temp_output/
 mv temp_output/MyPoster.png images/publications/MyPoster.png
 rm -rf temp_input temp_output
 ```
@@ -479,7 +479,7 @@ The script:
 ### Script Options
 
 ```bash
-python scripts/add_poster_borders.py --help
+python scripts/add_borders.py --help
 
 Options:
   input_dir       Directory containing input PNG files
