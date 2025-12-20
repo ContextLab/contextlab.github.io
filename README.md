@@ -4,6 +4,22 @@ The official website for the Contextual Dynamics Lab at Dartmouth College, hoste
 
 **Live site:** [https://context-lab.com](https://context-lab.com)
 
+## Table of Contents
+
+- [Site Structure](#site-structure)
+- [Design & Theming](#design--theming)
+- [Pages](#pages)
+- [JavaScript Components](#javascript-components)
+- [Forms](#forms)
+- [Automated Content Generation](#automated-content-generation)
+- [CV Auto-Generation](#cv-auto-generation)
+- [Adding Content (Legacy/Manual Method)](#adding-content-legacymanual-method)
+- [Adding Hand-Drawn Borders to Images](#adding-hand-drawn-borders-to-images)
+- [Mobile Responsiveness](#mobile-responsiveness)
+- [Deployment](#deployment)
+- [Browser Support](#browser-support)
+- [Credits](#credits)
+
 ## Site Structure
 
 ```
