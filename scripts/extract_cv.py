@@ -537,6 +537,18 @@ def generate_html(tex_content: str) -> str:
 
     html_parts = []
 
+    # Build sidebar navigation from sections
+    sidebar_links = []
+    for section in sections:
+        section_id = section.title.lower()
+        section_id = re.sub(r'[^a-z0-9]+', '-', section_id).strip('-')
+        # Shorten some section titles for sidebar display
+        display_title = section.title
+        if len(display_title) > 25:
+            # Truncate long titles
+            display_title = display_title[:22] + '...'
+        sidebar_links.append(f'            <a href="#{section_id}">{display_title}</a>\n')
+
     # HTML header
     html_parts.append('''<!DOCTYPE html>
 <html lang="en">
@@ -553,6 +565,14 @@ def generate_html(tex_content: str) -> str:
             <a href="JRM_CV.pdf" class="download-btn" download>Download PDF</a>
         </div>
     </div>
+
+    <aside class="cv-sidebar">
+        <div class="cv-sidebar-title">Sections</div>
+        <nav>
+''')
+    html_parts.extend(sidebar_links)
+    html_parts.append('''        </nav>
+    </aside>
 
     <div class="cv-content">
 ''')
