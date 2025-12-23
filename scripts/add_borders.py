@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Add hand-drawn borders to poster thumbnail images.
+"""Add hand-drawn borders to images (posters, profile photos, etc.).
 
-Takes PNG images and adds randomly selected borders from an SVG template,
-producing output images suitable for the publications page.
+Takes image files and adds randomly selected borders from an SVG template.
+Images are automatically cropped to square and resized if needed.
 
 Usage:
-    python add_poster_borders.py <input_dir> <output_dir> [--border-svg <path>]
+    # Process individual files
+    python add_borders.py image1.png image2.jpg output_dir/
+
+    # Process directory of images
+    python add_borders.py input_dir/ output_dir/
+
+    # With face detection for smart cropping
+    python add_borders.py photo.png output_dir/ --face
 """
 import argparse
 import random
@@ -45,6 +52,121 @@ CONTENT_SIZE = OUTPUT_SIZE - (2 * MARGIN)  # ~418px
 # Border inset - how much the border overlaps the poster edges
 # Poster extends to middle of border lines (half the line thickness)
 BORDER_INSET = 6
+
+# Maximum dimension for input images (larger images are resized)
+MAX_INPUT_DIMENSION = 1000
+
+
+def resize_to_max_dimension(img: Image.Image, max_size: int = MAX_INPUT_DIMENSION) -> Image.Image:
+    """Resize image so max dimension is max_size, preserving aspect ratio.
+
+    If the image is already smaller than max_size in both dimensions,
+    it is returned unchanged.
+
+    Args:
+        img: PIL Image to resize
+        max_size: Maximum allowed dimension (default 1000px)
+
+    Returns:
+        Resized image (or original if already small enough)
+    """
+    width, height = img.size
+    if max(width, height) <= max_size:
+        return img
+
+    if width > height:
+        new_width = max_size
+        new_height = int(height * (max_size / width))
+    else:
+        new_height = max_size
+        new_width = int(width * (max_size / height))
+
+    return img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+
+def get_face_detector():
+    """Get or create a mediapipe face detector (cached)."""
+    if not hasattr(get_face_detector, '_detector'):
+        import mediapipe as mp
+        from mediapipe.tasks import python as mp_python
+        from mediapipe.tasks.python import vision
+        import urllib.request
+        import os
+
+        # Download the face detection model if not present
+        model_path = Path(__file__).parent / 'blaze_face_short_range.tflite'
+        if not model_path.exists():
+            url = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite"
+            print(f"    Downloading face detection model...")
+            urllib.request.urlretrieve(url, str(model_path))
+
+        # Create face detector
+        base_options = mp_python.BaseOptions(model_asset_path=str(model_path))
+        options = vision.FaceDetectorOptions(base_options=base_options)
+        get_face_detector._detector = vision.FaceDetector.create_from_options(options)
+
+    return get_face_detector._detector
+
+
+def crop_to_square(img: Image.Image, use_face_detection: bool = False) -> Image.Image:
+    """Crop image to square, centered on face (if requested) or image center.
+
+    The crop size is the minimum of width and height (no upscaling).
+
+    Args:
+        img: PIL Image to crop
+        use_face_detection: If True, use mediapipe to detect face and center
+                           crop on it. Falls back to center if no face found.
+
+    Returns:
+        Square-cropped image
+    """
+    width, height = img.size
+    if width == height:
+        return img
+
+    crop_size = min(width, height)
+
+    # Default to center crop
+    center_x, center_y = width // 2, height // 2
+
+    if use_face_detection:
+        try:
+            import mediapipe as mp
+
+            # Convert to RGB for mediapipe
+            img_rgb = img.convert('RGB')
+
+            # Save to temp file for mediapipe (it needs a file path or specific format)
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                img_rgb.save(tmp.name)
+                mp_image = mp.Image.create_from_file(tmp.name)
+
+            try:
+                detector = get_face_detector()
+                result = detector.detect(mp_image)
+
+                if result.detections:
+                    # Get first face bounding box (in pixels)
+                    bbox = result.detections[0].bounding_box
+                    center_x = bbox.origin_x + bbox.width // 2
+                    center_y = bbox.origin_y + bbox.height // 2
+                    print(f"    Face detected at ({center_x}, {center_y})")
+                else:
+                    print("    No face detected, using center crop")
+            finally:
+                Path(tmp.name).unlink(missing_ok=True)
+
+        except ImportError:
+            print("    Warning: mediapipe not installed, using center crop")
+        except Exception as e:
+            print(f"    Warning: Face detection failed ({e}), using center crop")
+
+    # Calculate crop bounds, ensuring we stay within image boundaries
+    left = max(0, min(center_x - crop_size // 2, width - crop_size))
+    top = max(0, min(center_y - crop_size // 2, height - crop_size))
+
+    return img.crop((left, top, left + crop_size, top + crop_size))
 
 
 def extract_border_from_svg(svg_path: Path, region_idx: int, output_size: int) -> Image.Image:
@@ -228,19 +350,49 @@ def add_border_to_image(
     return output
 
 
-def process_images(
-    input_dir: Path,
-    output_dir: Path,
-    svg_path: Path,
-    output_size: int = OUTPUT_SIZE
-) -> None:
-    """Process all PNG images in input directory, adding borders.
+def collect_image_files(inputs: list) -> list:
+    """Collect all image files from a list of files and directories.
 
     Args:
-        input_dir: Directory containing input PNG files
+        inputs: List of Path objects (files or directories)
+
+    Returns:
+        List of image file paths (PNG, JPG, JPEG)
+    """
+    image_extensions = {'.png', '.jpg', '.jpeg'}
+    image_files = []
+
+    for input_path in inputs:
+        if input_path.is_file():
+            if input_path.suffix.lower() in image_extensions:
+                image_files.append(input_path)
+            else:
+                print(f"  Skipping non-image file: {input_path}")
+        elif input_path.is_dir():
+            for ext in image_extensions:
+                image_files.extend(input_path.glob(f'*{ext}'))
+                image_files.extend(input_path.glob(f'*{ext.upper()}'))
+
+    # Remove duplicates and sort
+    image_files = sorted(set(image_files))
+    return image_files
+
+
+def process_images(
+    inputs: list,
+    output_dir: Path,
+    svg_path: Path,
+    output_size: int = OUTPUT_SIZE,
+    use_face_detection: bool = False
+) -> None:
+    """Process images, adding borders after optional crop and resize.
+
+    Args:
+        inputs: List of input files or directories
         output_dir: Directory to save output files
         svg_path: Path to SVG file with border designs
         output_size: Size of output images (square)
+        use_face_detection: Use face detection for centering crops
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -258,45 +410,69 @@ def process_images(
     if not borders:
         raise RuntimeError("No borders could be loaded!")
 
-    # Process each PNG in input directory
-    png_files = list(input_dir.glob('*.png'))
-    print(f"\nProcessing {len(png_files)} images...")
+    # Collect all image files from inputs
+    image_files = collect_image_files(inputs)
+    if not image_files:
+        print("No image files found to process.")
+        return
 
-    for png_path in png_files:
-        print(f"  Processing {png_path.name}...")
+    print(f"\nProcessing {len(image_files)} images...")
+    if use_face_detection:
+        print("  (Face detection enabled)")
 
-        # Load poster image
-        poster = Image.open(png_path)
-        if poster.mode != 'RGBA':
-            poster = poster.convert('RGBA')
+    for img_path in image_files:
+        print(f"  Processing {img_path.name}...")
 
-        # Select random border
+        # Load image
+        img = Image.open(img_path)
+        if img.mode != 'RGBA':
+            img = img.convert('RGBA')
+
+        original_size = img.size
+
+        # Step 1: Crop to square (with optional face detection)
+        img = crop_to_square(img, use_face_detection=use_face_detection)
+        if original_size[0] != original_size[1]:  # Was not square before
+            print(f"    Cropped to {img.size[0]}x{img.size[1]}")
+
+        # Step 2: Resize if larger than max dimension
+        pre_resize = img.size
+        img = resize_to_max_dimension(img)
+        if img.size != pre_resize:
+            print(f"    Resized to {img.size[0]}x{img.size[1]}")
+
+        # Step 3: Select random border and composite
         border = random.choice(borders)
+        result = add_border_to_image(img, border)
 
-        # Composite
-        result = add_border_to_image(poster, border)
-
-        # Save as RGBA to preserve transparent margins
-        output_path = output_dir / png_path.name
+        # Save as PNG (output name based on input, always .png)
+        output_name = img_path.stem + '.png'
+        output_path = output_dir / output_name
         result.save(output_path, 'PNG', optimize=True)
         print(f"    Saved to {output_path}")
 
-    print(f"\nDone! Processed {len(png_files)} images.")
+    print(f"\nDone! Processed {len(image_files)} images.")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Add hand-drawn borders to poster thumbnail images'
+        description='Add hand-drawn borders to images (posters, profile photos, etc.)'
     )
     parser.add_argument(
-        'input_dir',
+        'inputs',
         type=Path,
-        help='Directory containing input PNG files'
+        nargs='+',
+        help='Input PNG/JPG files or directories containing images'
     )
     parser.add_argument(
         'output_dir',
         type=Path,
         help='Directory to save output files'
+    )
+    parser.add_argument(
+        '--face',
+        action='store_true',
+        help='Use face detection to center crop on detected face'
     )
     parser.add_argument(
         '--border-svg',
@@ -313,13 +489,21 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.input_dir.exists():
-        raise FileNotFoundError(f"Input directory not found: {args.input_dir}")
+    # Validate inputs exist
+    for input_path in args.inputs:
+        if not input_path.exists():
+            raise FileNotFoundError(f"Input not found: {input_path}")
 
     if not args.border_svg.exists():
         raise FileNotFoundError(f"Border SVG not found: {args.border_svg}")
 
-    process_images(args.input_dir, args.output_dir, args.border_svg, args.output_size)
+    process_images(
+        args.inputs,
+        args.output_dir,
+        args.border_svg,
+        args.output_size,
+        use_face_detection=args.face
+    )
 
 
 if __name__ == '__main__':

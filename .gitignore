@@ -24,5 +24,8 @@ __pycache__/
 venv/
 .venv/
 
+# ML models (downloaded on demand)
+*.tflite
+
 # Claude skills (local only)
 .claude/

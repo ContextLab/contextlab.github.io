@@ -21,5 +21,11 @@ requests>=2.31.0
 # Screenshot comparison for visual regression tests
 Pillow>=10.0.0
 
+# Image processing for border script
+numpy>=1.24.0
+
+# Face detection for smart cropping (optional)
+mediapipe>=0.10.0
+
 # Browser automation for visual tests
 selenium>=4.15.0
