@@ -452,45 +452,48 @@ Poster thumbnails and people photos use hand-drawn green borders for visual cons
 ### Border Script Usage
 
 ```bash
-# Basic usage
-python scripts/add_borders.py <input_dir> <output_dir>
+# Process a single image
+python scripts/add_borders.py photo.png output_dir/
 
-# Example: Process new poster images
-python scripts/add_borders.py images/publications/new/ images/publications/
+# Process multiple images
+python scripts/add_borders.py img1.png img2.jpg img3.png output_dir/
 
-# Example: Process a single image (copy to temp folder first)
-mkdir temp_input
-cp images/publications/MyPoster.png temp_input/
-python scripts/add_borders.py temp_input/ temp_output/
-mv temp_output/MyPoster.png images/publications/MyPoster.png
-rm -rf temp_input temp_output
+# Process a directory of images
+python scripts/add_borders.py input_dir/ output_dir/
+
+# Use face detection for smart cropping (recommended for profile photos)
+python scripts/add_borders.py photo.jpg output_dir/ --face
 ```
 
 ### How It Works
 
 The script:
 1. Loads 10 hand-drawn border designs from `images/templates/WebsiteDoodles_Posters_v1.svg`
-2. For each input PNG, selects a random border
-3. Resizes the image to fit inside the border frame (poster extends to middle of border lines)
-4. Composites the border on top of the image
-5. Makes areas outside the border transparent
-6. Outputs a 500x500 PNG with ~41px transparent margins
+2. For each input image (PNG, JPG, JPEG):
+   - Crops to square (centered, or face-centered with `--face`)
+   - Resizes if larger than 1000px (preserving aspect ratio)
+   - Selects a random border
+   - Composites the border on top of the image
+   - Makes areas outside the border transparent
+3. Outputs a 500x500 PNG with ~41px transparent margins
 
 ### Adding New Poster Thumbnails
 
-1. Create a thumbnail PNG of the poster (any size, will be resized)
-2. Place in a temporary input folder
-3. Run the border script
-4. Move the output to `images/publications/`
-5. Update `data/publications.xlsx` with the image filename
+```bash
+# Direct processing - no temp folders needed
+python scripts/add_borders.py MyPoster.png images/publications/
+```
+
+Then update `data/publications.xlsx` with the image filename.
 
 ### Adding New People Photos
 
-1. Prepare the photo as a PNG (square crop recommended)
-2. Place in a temporary input folder
-3. Run the border script
-4. Move the output to `images/people/`
-5. Update `data/people.xlsx` with the image filename
+```bash
+# Use --face for automatic face-centered cropping
+python scripts/add_borders.py photo.jpg images/people/ --face
+```
+
+Then update `data/people.xlsx` with the image filename.
 
 ### Script Options
 
@@ -498,8 +501,9 @@ The script:
 python scripts/add_borders.py --help
 
 Options:
-  input_dir       Directory containing input PNG files
+  inputs          Input PNG/JPG files or directories (one or more)
   output_dir      Directory to save output files
+  --face          Use face detection to center crop on detected face
   --border-svg    Path to SVG with border designs (default: images/templates/WebsiteDoodles_Posters_v1.svg)
   --output-size   Output image size in pixels (default: 500)
 ```
@@ -510,6 +514,7 @@ The script requires:
 - Python 3
 - PIL/Pillow
 - NumPy
+- mediapipe (for `--face` option; model downloads automatically on first use)
 - `rsvg-convert` (from librsvg, install via `brew install librsvg` on macOS)
 
 ## Mobile Responsiveness
