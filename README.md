@@ -185,7 +185,39 @@ scripts/                       # Build scripts
    - `image` - Thumbnail filename (optional, place image in `images/publications/`)
 4. Save and push to GitHub (or run build locally)
 
-#### Adding a New Team Member
+#### Adding a New Team Member (Automated)
+
+Use the onboarding script for the easiest experience:
+
+```bash
+cd scripts
+
+# Basic onboarding (will auto-generate bio)
+python onboard_member.py "First Last"
+
+# With role and bio
+python onboard_member.py "First Last" --rank "grad student" --bio "Bio text here..."
+
+# With photo (searches Downloads, Desktop, images/people/)
+python onboard_member.py "First Last" --photo headshot_filename
+
+# With website
+python onboard_member.py "First Last" --website "https://example.com"
+
+# Skip LLM bio processing (use simple default)
+python onboard_member.py "First Last" --skip-llm
+```
+
+The script will:
+- Process the photo with a hand-drawn border (using face detection)
+- Generate or edit the bio using a local LLM (gpt-oss-20b)
+- Add the member to `people.xlsx`
+- Add the member to `JRM_CV.tex`
+- Rebuild `people.html`
+
+**Idempotent**: Running twice with the same name updates the existing entry.
+
+#### Adding a New Team Member (Manual)
 
 1. Open `data/people.xlsx` in Excel/Google Sheets
 2. Go to the `members` sheet
@@ -197,7 +229,34 @@ scripts/                       # Build scripts
    - `image` - Photo filename (place photo in `images/people/`)
 4. Save and push to GitHub
 
-#### Adding Alumni
+#### Offboarding a Team Member (Moving to Alumni)
+
+Use the offboarding script to move members from active to alumni:
+
+```bash
+cd scripts
+
+# Offboard a member (will prompt for confirmation)
+python offboard_member.py "member name"
+
+# Specify end year
+python offboard_member.py "member name" --end-year 2025
+
+# Skip confirmation prompt
+python offboard_member.py "member name" -y
+
+# List undergrads without photos
+python offboard_member.py --list-no-photo
+```
+
+The script will:
+- Move the member from `members` sheet to `alumni_undergrads` in `people.xlsx`
+- Update `JRM_CV.tex` to add the end date
+- Prompt to rebuild `people.html`
+
+**Idempotent**: Running twice with the same name detects the member is already offboarded.
+
+#### Adding Alumni (Manual)
 
 1. Open `data/people.xlsx`
 2. Go to the appropriate sheet:
