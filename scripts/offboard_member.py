@@ -115,16 +115,9 @@ def move_to_alumni(xlsx_path: Path, member: Dict[str, Any], end_year: str) -> bo
 
     alumni_sheet = wb["alumni_undergrads"]
 
-    last_row = alumni_sheet.max_row
-    while last_row > 1 and not any(
-        alumni_sheet.cell(row=last_row, column=c).value for c in range(1, 3)
-    ):
-        last_row -= 1
-
-    new_row = last_row + 1
-
-    alumni_sheet.cell(row=new_row, column=1, value=member["name"].title())
-    alumni_sheet.cell(row=new_row, column=2, value=end_year)
+    alumni_sheet.insert_rows(2)
+    alumni_sheet.cell(row=2, column=1, value=member["name"].title())
+    alumni_sheet.cell(row=2, column=2, value=end_year)
 
     wb.save(xlsx_path)
     wb.close()
