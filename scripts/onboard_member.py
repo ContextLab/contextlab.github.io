@@ -678,6 +678,23 @@ def member_exists_in_spreadsheet(
     return False, None
 
 
+def get_existing_bio(xlsx_path: Path, name: str) -> Optional[str]:
+    wb = openpyxl.load_workbook(xlsx_path)
+    sheet = wb["members"]
+
+    name_lower = name.lower()
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        if row[1] and str(row[1]).lower() == name_lower:
+            bio = row[4] if len(row) > 4 else None
+            wb.close()
+            if bio and len(str(bio)) > 10:
+                return str(bio)
+            return None
+
+    wb.close()
+    return None
+
+
 def find_alumni_entry(xlsx_path: Path, name: str) -> Optional[Dict[str, Any]]:
     """Find alumni entry across all alumni sheets. Returns dict with sheet name, row, and data."""
     wb = openpyxl.load_workbook(xlsx_path)
@@ -1023,6 +1040,12 @@ def onboard_member(
     if bio is None and is_reactivation:
         print("  Searching git history for old bio...")
         bio = get_bio_from_git_history(xlsx_path, name, project_root)
+
+    if bio is None:
+        existing_bio = get_existing_bio(xlsx_path, name)
+        if existing_bio:
+            print(f"  Using existing bio from spreadsheet")
+            bio = existing_bio
 
     if not skip_llm:
         if bio:
