@@ -942,7 +942,7 @@ def add_to_cv(cv_path: Path, name: str, role: str, year: str) -> bool:
             r"(\\textit\{Postdoctoral Advisees\}:\s*\n\\begin\{etaremune\})"
         )
         entry = f"\\item {name} ({year} -- )"
-    elif "grad" in role_lower:
+    elif "grad" in role_lower and "undergrad" not in role_lower:
         section_pattern = r"(\\textit\{Graduate Advisees\}:\s*\n\\begin\{etaremune\})"
         entry = f"\\item {name} (Doctoral student; {year} -- )"
     else:
