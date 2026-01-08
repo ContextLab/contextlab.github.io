@@ -80,7 +80,17 @@ python onboard_member.py "First Last"
 python onboard_member.py "First Last" --rank "grad student"
 python onboard_member.py "First Last" --photo headshot --bio "Bio text..."
 python onboard_member.py "First Last" --website "https://example.com"
-python onboard_member.py "First Last" --skip-llm  # Skip LLM processing
+python onboard_member.py "First Last" --skip-llm
+
+# With GitHub integration (invite to org + teams):
+python onboard_member.py "First Last" --github username
+python onboard_member.py "First Last" --github username --teams "supereeg,hypertools"
+
+# With Google Calendar integration (share lab calendars):
+python onboard_member.py "First Last" --gmail user@gmail.com
+
+# Full onboarding with all integrations:
+python onboard_member.py "First Last" --rank "grad student" --github user --gmail user@gmail.com
 
 # Offboard a lab member (move to alumni):
 python offboard_member.py "member name"
@@ -95,3 +105,11 @@ See `requirements-build.txt`:
 - mediapipe (face detection for add_borders.py)
 - Pillow/numpy (image processing)
 - transformers/torch (for onboard_member.py LLM bio generation)
+- google-api-python-client/google-auth (for Google Calendar integration)
+
+## CREDENTIALS
+
+Google Calendar integration requires service account credentials:
+- Location: `~/.config/cdl/google-credentials.json`
+- Setup: Run `onboard_member.py` with `--gmail` flag to see setup instructions
+- The service account must have access to lab calendars (shared via Google Calendar settings)

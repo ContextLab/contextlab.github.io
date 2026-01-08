@@ -7,7 +7,9 @@ This script:
 3. Generates or edits bio using local LLM (gpt-oss-20b)
 4. Adds member to people.xlsx
 5. Adds member to JRM_CV.tex
-6. Rebuilds people.html
+6. Invites to GitHub organization (if --github provided)
+7. Shares Google Calendars (if --gmail provided)
+8. Rebuilds people.html
 
 Idempotent: Running twice with same name will update existing entry.
 Reactivation: Running on an alumni will move them back to active status.
@@ -17,22 +19,377 @@ Usage:
     python onboard_member.py "First Last" --rank "grad student"
     python onboard_member.py "First Last" --photo photo.jpg --bio "Bio text..."
     python onboard_member.py "First Last" --website "https://example.com"
+    python onboard_member.py "First Last" --github username --teams "supereeg,hypertools"
+    python onboard_member.py "First Last" --gmail user@gmail.com
 """
 
 import argparse
+import json
 import re
 import subprocess
 import sys
 import tempfile
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
 
 import openpyxl
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+GITHUB_ORG = "ContextLab"
+CREDENTIALS_DIR = Path.home() / ".config" / "cdl"
+GOOGLE_CREDENTIALS_FILE = CREDENTIALS_DIR / "google-credentials.json"
+
+# Google Calendar IDs (from lab manual)
+CALENDARS = {
+    "contextual dynamics lab": {
+        "id": "5ta50cfv4uih0a0k8m2di9dhjo@group.calendar.google.com",
+        "undergrad_role": "reader",  # read-only for undergrads
+        "default_role": "writer",  # write for grads/postdocs
+    },
+    "cdl resources": {
+        "id": "dgcv8l8a8s10hfg2s5h0qec0q0@group.calendar.google.com",
+        "undergrad_role": "writer",
+        "default_role": "writer",
+    },
+    "out of lab": {
+        "id": "h1j06dohcg7v1g2o5tkb7ijhvs@group.calendar.google.com",
+        "undergrad_role": "writer",
+        "default_role": "writer",
+    },
+}
 
 
 def get_project_root() -> Path:
     return Path(__file__).parent.parent
+
+
+def fuzzy_match_team(query: str, team_names: List[str]) -> Optional[str]:
+    """Match team name using fuzzy matching (case-insensitive, space-insensitive)."""
+    query_normalized = query.lower().replace(" ", "").replace("-", "").replace("_", "")
+
+    for team in team_names:
+        team_normalized = (
+            team.lower().replace(" ", "").replace("-", "").replace("_", "")
+        )
+        if query_normalized == team_normalized:
+            return team
+
+    best_match = None
+    best_ratio = 0.6
+    for team in team_names:
+        team_normalized = (
+            team.lower().replace(" ", "").replace("-", "").replace("_", "")
+        )
+        ratio = SequenceMatcher(None, query_normalized, team_normalized).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_match = team
+
+    return best_match
+
+
+def get_github_teams() -> Dict[str, int]:
+    """Get all teams in the ContextLab organization with their IDs."""
+    result = subprocess.run(
+        ["gh", "api", f"/orgs/{GITHUB_ORG}/teams", "--paginate"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"  Warning: Could not fetch GitHub teams: {result.stderr}")
+        return {}
+
+    teams = json.loads(result.stdout)
+    return {team["name"]: team["id"] for team in teams}
+
+
+def is_github_org_member(username: str) -> bool:
+    """Check if user is already a member of the organization."""
+    result = subprocess.run(
+        ["gh", "api", f"/orgs/{GITHUB_ORG}/members/{username}"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def get_pending_invitations() -> List[str]:
+    """Get list of usernames with pending org invitations."""
+    result = subprocess.run(
+        ["gh", "api", f"/orgs/{GITHUB_ORG}/invitations", "--paginate"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return []
+
+    invitations = json.loads(result.stdout)
+    return [inv.get("login", "") for inv in invitations if inv.get("login")]
+
+
+def invite_to_github_org(username: str, team_names: Optional[List[str]] = None) -> bool:
+    """Invite user to GitHub org and add to specified teams."""
+    print(f"\n  GitHub: Processing {username}...")
+
+    if is_github_org_member(username):
+        print(f"    {username} is already an org member")
+        if team_names:
+            return add_to_github_teams(username, team_names)
+        return True
+
+    pending = get_pending_invitations()
+    if username.lower() in [p.lower() for p in pending]:
+        print(f"    {username} already has a pending invitation")
+        return True
+
+    all_teams = get_github_teams()
+    if not all_teams:
+        print("    Warning: Could not fetch teams, inviting without team assignment")
+
+    teams_to_add = ["Lab default"]
+    if team_names:
+        for requested_team in team_names:
+            matched = fuzzy_match_team(requested_team, list(all_teams.keys()))
+            if matched and matched not in teams_to_add:
+                teams_to_add.append(matched)
+                if matched != requested_team:
+                    print(f"    Matched '{requested_team}' -> '{matched}'")
+            elif not matched:
+                print(f"    Warning: No match found for team '{requested_team}'")
+
+    team_ids = [all_teams[t] for t in teams_to_add if t in all_teams]
+
+    cmd = [
+        "gh",
+        "api",
+        "-X",
+        "POST",
+        f"/orgs/{GITHUB_ORG}/invitations",
+        "-f",
+        f"invitee_id={get_github_user_id(username)}",
+        "-f",
+        "role=direct_member",
+    ]
+    for tid in team_ids:
+        cmd.extend(["-F", f"team_ids[]={tid}"])
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        if "invitee_id" in result.stderr or "user_id" in result.stderr:
+            cmd_email = [
+                "gh",
+                "api",
+                "-X",
+                "POST",
+                f"/orgs/{GITHUB_ORG}/invitations",
+                "-f",
+                f"email={username}@users.noreply.github.com",
+                "-f",
+                "role=direct_member",
+            ]
+            for tid in team_ids:
+                cmd_email.extend(["-F", f"team_ids[]={tid}"])
+            result = subprocess.run(cmd_email, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            print(f"    Error inviting to org: {result.stderr}")
+            return False
+
+    print(f"    Invited {username} to {GITHUB_ORG}")
+    print(f"    Teams: {', '.join(teams_to_add)}")
+    return True
+
+
+def get_github_user_id(username: str) -> Optional[int]:
+    """Get GitHub user ID from username."""
+    result = subprocess.run(
+        ["gh", "api", f"/users/{username}", "--jq", ".id"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        try:
+            return int(result.stdout.strip())
+        except ValueError:
+            pass
+    return None
+
+
+def add_to_github_teams(username: str, team_names: List[str]) -> bool:
+    """Add existing org member to additional teams."""
+    all_teams = get_github_teams()
+    success = True
+
+    for requested_team in team_names:
+        matched = fuzzy_match_team(requested_team, list(all_teams.keys()))
+        if not matched:
+            print(f"    Warning: No match found for team '{requested_team}'")
+            continue
+
+        team_slug = matched.lower().replace(" ", "-")
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "-X",
+                "PUT",
+                f"/orgs/{GITHUB_ORG}/teams/{team_slug}/memberships/{username}",
+                "-f",
+                "role=member",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0:
+            print(f"    Added to team: {matched}")
+        else:
+            print(f"    Warning: Could not add to {matched}: {result.stderr}")
+            success = False
+
+    return success
+
+
+def setup_google_credentials() -> bool:
+    """Check for Google credentials and provide setup instructions if missing."""
+    if GOOGLE_CREDENTIALS_FILE.exists():
+        return True
+
+    print("\n" + "=" * 60)
+    print("GOOGLE CALENDAR SETUP REQUIRED")
+    print("=" * 60)
+    print(f"""
+To share Google Calendars, you need a service account:
+
+1. Go to https://console.cloud.google.com/
+2. Create a project (or use existing CDL project)
+3. Enable the Google Calendar API
+4. Create a Service Account:
+   - Go to IAM & Admin > Service Accounts
+   - Create service account named 'cdl-onboarding-bot'
+   - Create a JSON key and download it
+5. Share each calendar with the service account email:
+   - Open Google Calendar settings for each calendar
+   - Add the service account email with 'Make changes to events'
+
+6. Save the JSON key file to:
+   {GOOGLE_CREDENTIALS_FILE}
+
+Create the directory if needed:
+   mkdir -p {CREDENTIALS_DIR}
+   mv ~/Downloads/your-key-file.json {GOOGLE_CREDENTIALS_FILE}
+   chmod 600 {GOOGLE_CREDENTIALS_FILE}
+""")
+    print("=" * 60)
+    return False
+
+
+def get_calendar_service():
+    """Get authenticated Google Calendar service."""
+    try:
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+    except ImportError:
+        print("  Installing Google API dependencies...")
+        subprocess.check_call(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "-q",
+                "google-api-python-client",
+                "google-auth",
+            ]
+        )
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+
+    creds = service_account.Credentials.from_service_account_file(
+        str(GOOGLE_CREDENTIALS_FILE),
+        scopes=["https://www.googleapis.com/auth/calendar"],
+    )
+    return build("calendar", "v3", credentials=creds)
+
+
+def get_calendar_acl(service, calendar_id: str, email: str) -> Optional[str]:
+    """Check if user already has access to calendar. Returns role or None."""
+    try:
+        acl_list = service.acl().list(calendarId=calendar_id).execute()
+        for rule in acl_list.get("items", []):
+            if rule.get("scope", {}).get("value", "").lower() == email.lower():
+                return rule.get("role")
+    except Exception:
+        pass
+    return None
+
+
+def share_calendar(
+    service, calendar_id: str, email: str, role: str, calendar_name: str
+) -> bool:
+    """Share a calendar with a user."""
+    existing_role = get_calendar_acl(service, calendar_id, email)
+
+    if existing_role:
+        if existing_role == role:
+            print(f"    {calendar_name}: already has {role} access")
+            return True
+        else:
+            print(f"    {calendar_name}: has {existing_role}, updating to {role}")
+
+    acl_rule = {
+        "scope": {"type": "user", "value": email},
+        "role": role,
+    }
+
+    try:
+        if existing_role:
+            rule_id = f"user:{email}"
+            service.acl().update(
+                calendarId=calendar_id, ruleId=rule_id, body=acl_rule
+            ).execute()
+        else:
+            service.acl().insert(
+                calendarId=calendar_id, body=acl_rule, sendNotifications=True
+            ).execute()
+
+        role_desc = "read" if role == "reader" else "write"
+        print(f"    {calendar_name}: granted {role_desc} access")
+        return True
+
+    except Exception as e:
+        print(f"    {calendar_name}: Error - {e}")
+        return False
+
+
+def share_google_calendars(email: str, rank: str) -> bool:
+    """Share all lab calendars with appropriate permissions based on rank."""
+    if not setup_google_credentials():
+        return False
+
+    print(f"\n  Google Calendar: Sharing with {email}...")
+
+    try:
+        service = get_calendar_service()
+    except Exception as e:
+        print(f"    Error connecting to Google Calendar API: {e}")
+        return False
+
+    is_undergrad = "undergrad" in rank.lower()
+    success = True
+
+    for cal_name, cal_info in CALENDARS.items():
+        role = cal_info["undergrad_role"] if is_undergrad else cal_info["default_role"]
+        if not share_calendar(service, cal_info["id"], email, role, cal_name):
+            success = False
+
+    return success
 
 
 def ensure_dependencies():
@@ -519,6 +876,9 @@ def onboard_member(
     photo: Optional[str] = None,
     bio: Optional[str] = None,
     website: Optional[str] = None,
+    github_username: Optional[str] = None,
+    github_teams: Optional[List[str]] = None,
+    gmail: Optional[str] = None,
     skip_rebuild: bool = False,
     skip_llm: bool = False,
 ) -> bool:
@@ -584,6 +944,12 @@ def onboard_member(
     print("\nUpdating CV...")
     add_to_cv(cv_path, name, rank, current_year)
 
+    if github_username:
+        invite_to_github_org(github_username, github_teams)
+
+    if gmail:
+        share_google_calendars(gmail, rank)
+
     if not skip_rebuild:
         rebuild_pages(project_root)
 
@@ -602,6 +968,16 @@ Examples:
     python onboard_member.py "Jane Smith" --rank "grad student"
     python onboard_member.py "Bob Jones" --photo headshot --bio "Bob is interested in memory."
     python onboard_member.py "Alice Lee" --website "https://alice.com" --skip-llm
+
+    # GitHub integration (invite to org and teams)
+    python onboard_member.py "John Doe" --github johndoe
+    python onboard_member.py "John Doe" --github johndoe --teams "supereeg,hypertools"
+
+    # Google Calendar integration (share lab calendars)
+    python onboard_member.py "John Doe" --gmail john.doe@gmail.com
+
+    # Full onboarding with all integrations
+    python onboard_member.py "John Doe" --rank "grad student" --github johndoe --gmail john@gmail.com
         """,
     )
 
@@ -624,6 +1000,20 @@ Examples:
     )
     parser.add_argument("--website", "-w", help="Personal website URL")
     parser.add_argument(
+        "--github",
+        "-g",
+        help="GitHub username. If provided, invites to ContextLab org (adds to 'Lab default' team).",
+    )
+    parser.add_argument(
+        "--teams",
+        "-t",
+        help="Comma-separated list of additional GitHub teams (uses fuzzy matching). E.g., 'supereeg,hypertools'",
+    )
+    parser.add_argument(
+        "--gmail",
+        help="Gmail address. If provided, shares lab calendars (undergrads get read access to main calendar, others get write).",
+    )
+    parser.add_argument(
         "--skip-rebuild", action="store_true", help="Skip rebuilding HTML pages"
     )
     parser.add_argument(
@@ -634,12 +1024,19 @@ Examples:
 
     args = parser.parse_args()
 
+    github_teams = None
+    if args.teams:
+        github_teams = [t.strip() for t in args.teams.split(",") if t.strip()]
+
     success = onboard_member(
         name=args.name,
         rank=args.rank,
         photo=args.photo,
         bio=args.bio,
         website=args.website,
+        github_username=args.github,
+        github_teams=github_teams,
+        gmail=args.gmail,
         skip_rebuild=args.skip_rebuild,
         skip_llm=args.skip_llm,
     )

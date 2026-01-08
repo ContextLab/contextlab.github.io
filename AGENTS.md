@@ -99,6 +99,8 @@ cd scripts && python onboard_member.py "First Last"
 cd scripts && python onboard_member.py "First Last" --rank "grad student"
 cd scripts && python onboard_member.py "First Last" --photo headshot --bio "Bio text..."
 cd scripts && python onboard_member.py "First Last" --skip-llm
+cd scripts && python onboard_member.py "First Last" --github username --teams "supereeg"
+cd scripts && python onboard_member.py "First Last" --gmail user@gmail.com
 
 # Offboard a lab member (move to alumni)
 cd scripts && python offboard_member.py "member name"

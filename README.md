@@ -206,6 +206,16 @@ python onboard_member.py "First Last" --website "https://example.com"
 
 # Skip LLM bio processing (use simple default)
 python onboard_member.py "First Last" --skip-llm
+
+# With GitHub integration (invite to ContextLab org and teams)
+python onboard_member.py "First Last" --github username
+python onboard_member.py "First Last" --github username --teams "supereeg,hypertools"
+
+# With Google Calendar integration (share lab calendars)
+python onboard_member.py "First Last" --gmail user@gmail.com
+
+# Full onboarding with all integrations
+python onboard_member.py "First Last" --rank "grad student" --github user --gmail user@gmail.com
 ```
 
 The script will:
@@ -213,7 +223,13 @@ The script will:
 - Generate or edit the bio using a local LLM (gpt-oss-20b)
 - Add the member to `people.xlsx`
 - Add the member to `JRM_CV.tex`
+- Invite to GitHub organization and teams (if `--github` provided)
+- Share Google Calendars with appropriate permissions (if `--gmail` provided)
 - Rebuild `people.html`
+
+**GitHub Integration**: Requires `gh` CLI to be authenticated with org admin permissions. Uses fuzzy matching for team names (e.g., "supereeg" matches "Super EEG").
+
+**Google Calendar Integration**: Requires service account credentials at `~/.config/cdl/google-credentials.json`. Run the script with `--gmail` to see setup instructions. Undergrads get read-only access to the main lab calendar; grad students and postdocs get write access. All members get write access to "out of lab" and "CDL resources" calendars.
 
 **Idempotent**: Running twice with the same name updates the existing entry.
 
