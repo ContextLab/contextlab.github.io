@@ -42,9 +42,10 @@ def load_members(xlsx_path: Path) -> List[Dict[str, Any]]:
     ):
         if not any(row):
             continue
-        member = {"_row_idx": row_idx}
+        member: Dict[str, Any] = {"_row_idx": row_idx}
         for header, value in zip(headers, row):
-            member[header] = value if value is not None else ""
+            if header is not None:
+                member[str(header)] = value if value is not None else ""
         members.append(member)
 
     wb.close()
