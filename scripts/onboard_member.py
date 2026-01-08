@@ -392,90 +392,190 @@ def share_google_calendars(email: str, rank: str) -> bool:
     return success
 
 
-def ensure_dependencies():
+LLM_VENV_DIR = Path.home() / ".cache" / "cdl" / "llm-venv"
+
+
+def get_llm_venv_python() -> Optional[Path]:
+    """Get the Python executable from the LLM virtual environment."""
+    if sys.platform == "win32":
+        python_path = LLM_VENV_DIR / "Scripts" / "python.exe"
+    else:
+        python_path = LLM_VENV_DIR / "bin" / "python"
+    return python_path if python_path.exists() else None
+
+
+def setup_llm_venv() -> Optional[Path]:
+    """Create isolated venv for LLM to avoid dependency conflicts."""
+    if get_llm_venv_python():
+        return get_llm_venv_python()
+
+    print("  Creating isolated LLM environment (one-time setup)...")
+    LLM_VENV_DIR.parent.mkdir(parents=True, exist_ok=True)
+
     try:
-        import transformers
-        import torch
-    except ImportError:
-        print("Installing required dependencies (transformers, torch, kernels)...")
+        subprocess.check_call(
+            [sys.executable, "-m", "venv", str(LLM_VENV_DIR)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"  Warning: Could not create venv: {e}")
+        return None
+
+    venv_python = get_llm_venv_python()
+    if not venv_python:
+        print("  Warning: venv created but Python not found")
+        return None
+
+    print("  Installing LLM dependencies (this may take a few minutes)...")
+    try:
+        subprocess.check_call(
+            [str(venv_python), "-m", "pip", "install", "-q", "--upgrade", "pip"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         subprocess.check_call(
             [
-                sys.executable,
+                str(venv_python),
                 "-m",
                 "pip",
                 "install",
                 "-q",
-                "transformers",
-                "torch",
-                "kernels",
-            ]
+                "mlx-lm",
+            ],
+            stdout=subprocess.DEVNULL,
         )
+    except subprocess.CalledProcessError as e:
+        print(f"  Warning: Could not install LLM dependencies: {e}")
+        return None
+
+    print("  LLM environment ready")
+    return venv_python
 
 
-def get_llm_pipeline():
-    if not hasattr(get_llm_pipeline, "_pipeline"):
-        ensure_dependencies()
-        from transformers import pipeline
+def run_llm_in_venv(script: str, timeout: int = 600) -> Optional[str]:
+    """Run LLM script in isolated venv and return output."""
+    venv_python = setup_llm_venv()
+    if not venv_python:
+        return None
 
-        print("Loading gpt-oss-20b model (this may take a moment on first run)...")
-        get_llm_pipeline._pipeline = pipeline(
+    try:
+        result = subprocess.run(
+            [str(venv_python), "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        else:
+            print(f"  LLM error: {result.stderr[:200]}")
+            return None
+    except subprocess.TimeoutExpired:
+        print("  Warning: LLM operation timed out")
+        return None
+    except Exception as e:
+        print(f"  Warning: LLM operation failed: {e}")
+        return None
+
+    if not ensure_llm_dependencies():
+        return None
+
+    from transformers import pipeline
+
+    print("  Loading gpt-oss-20b model (this may take a moment on first run)...")
+    try:
+        _llm_pipeline_cache = pipeline(
             "text-generation",
             model="openai/gpt-oss-20b",
             torch_dtype="auto",
             device_map="auto",
         )
-    return get_llm_pipeline._pipeline
+    except Exception as e:
+        print(f"  Warning: Could not load LLM model: {e}")
+        print("  Using fallback bio generation.")
+        return None
+
+    return _llm_pipeline_cache
+
+
+LLM_MODEL = "mlx-community/Qwen2.5-32B-Instruct-4bit"
 
 
 def generate_bio_with_llm(first_name: str, year: str) -> str:
-    pipe = get_llm_pipeline()
+    fallback = f"{first_name} joined the lab in {year} and is interested in how people learn and remember."
 
-    messages = [
-        {
-            "role": "user",
-            "content": f'Write a single short sentence bio for a new undergraduate research assistant named {first_name} who joined a cognitive neuroscience memory research lab in {year}. Keep it generic and professional. Do not use pronouns. Maximum 20 words. Example: "Alex joined the lab in 2025 and is interested in how people learn and remember."',
-        }
-    ]
+    script = f'''
+import warnings
+warnings.filterwarnings("ignore")
+from mlx_lm import load, generate
 
-    result = pipe(messages, max_new_tokens=50)
-    bio = result[0]["generated_text"][-1]["content"].strip()
-    bio = bio.strip('"').strip()
+model, tokenizer = load("{LLM_MODEL}")
 
-    if not bio or len(bio) < 10:
-        bio = f"{first_name} joined the lab in {year} and is interested in how people learn and remember."
+prompt = tokenizer.apply_chat_template(
+    [{{"role": "user", "content": "Write a single sentence professional bio for {first_name}, an undergraduate who joined a cognitive neuroscience memory research lab in {year}. Keep it generic. Do not use pronouns. Maximum 25 words. Output ONLY the bio sentence, nothing else."}}],
+    tokenize=False,
+    add_generation_prompt=True
+)
 
-    return bio
+bio = generate(model, tokenizer, prompt=prompt, max_tokens=60)
+bio = bio.strip('"').strip()
+if bio and len(bio) > 15 and not bio.lower().startswith("here") and not bio.lower().startswith("sure"):
+    print(bio)
+else:
+    print("")
+'''
+
+    print("  Generating bio with LLM...")
+    result = run_llm_in_venv(script)
+    if result and len(result) > 15:
+        return result
+    return fallback
 
 
 def edit_bio_with_llm(bio: str, first_name: str) -> str:
-    pipe = get_llm_pipeline()
+    bio_escaped = (
+        bio.replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace('"', '\\"')
+        .replace("\n", " ")
+    )
 
-    messages = [
-        {
-            "role": "user",
-            "content": f"""Edit this bio for a lab member named {first_name}. Follow these rules strictly:
-1. Use only first name "{first_name}" (remove last name if present)
-2. Fix any typos and grammar errors
-3. Use Oxford commas
-4. Keep to 3-4 sentences maximum
-5. Remove any dangerous personal information (keep hometown/state/country if mentioned)
-6. Remove any harmful content
-7. Keep the tone professional and friendly
+    script = f'''
+import warnings
+warnings.filterwarnings("ignore")
+from mlx_lm import load, generate
 
-Original bio: "{bio}"
+model, tokenizer = load("{LLM_MODEL}")
 
-Return ONLY the edited bio, nothing else.""",
-        }
-    ]
+prompt = tokenizer.apply_chat_template(
+    [{{"role": "user", "content": """Edit this bio. Rules:
+1. Use only first name "{first_name}" (remove last name)
+2. Fix typos and grammar  
+3. Keep 1-3 sentences max
+4. Remove dangerous personal info (SSN, addresses, phone numbers)
+5. Keep professional and friendly tone
 
-    result = pipe(messages, max_new_tokens=200)
-    edited = result[0]["generated_text"][-1]["content"].strip()
-    edited = edited.strip('"').strip()
+Original: "{bio_escaped}"
 
-    if not edited or len(edited) < 10:
-        return bio
+Output ONLY the edited bio, nothing else:"""}}],
+    tokenize=False,
+    add_generation_prompt=True
+)
 
-    return edited
+edited = generate(model, tokenizer, prompt=prompt, max_tokens=150)
+edited = edited.strip('"').strip()
+if edited and len(edited) > 15 and not edited.lower().startswith("here") and not edited.lower().startswith("edited"):
+    print(edited)
+else:
+    print("")
+'''
+
+    print("  Editing bio with LLM...")
+    result = run_llm_in_venv(script)
+    if result and len(result) > 15:
+        return result
+    return bio
 
 
 def parse_name(full_name: str) -> Tuple[str, str]:
@@ -604,14 +704,14 @@ def find_alumni_entry(xlsx_path: Path, name: str) -> Optional[Dict[str, Any]]:
                 continue
             row_name = str(row[0]).lower()
             if row_name == name_lower or row_name == name_title:
-                entry = {
+                entry: Dict[str, Any] = {
                     "sheet": sheet_name,
                     "row_idx": row_idx,
                     "name": row[0],
                 }
                 for i, header in enumerate(headers):
                     if header and i < len(row):
-                        entry[header] = row[i]
+                        entry[str(header)] = row[i]
                 wb.close()
                 return entry
 
@@ -710,7 +810,7 @@ def add_to_spreadsheet(
     wb = openpyxl.load_workbook(xlsx_path)
     sheet = wb["members"]
 
-    if exists:
+    if exists and row_idx is not None:
         print(f"  Updating existing entry for {name} at row {row_idx}")
         if image:
             sheet.cell(row=row_idx, column=1, value=image)
