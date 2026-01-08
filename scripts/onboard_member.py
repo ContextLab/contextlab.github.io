@@ -2,13 +2,15 @@
 """Onboard new lab members.
 
 This script:
-1. Processes photo with hand-drawn border (if provided)
-2. Generates or edits bio using local LLM (gpt-oss-20b)
-3. Adds member to people.xlsx
-4. Adds member to JRM_CV.tex
-5. Rebuilds people.html
+1. Checks if member is an alumni (and reactivates them if so)
+2. Processes photo with hand-drawn border (if provided)
+3. Generates or edits bio using local LLM (gpt-oss-20b)
+4. Adds member to people.xlsx
+5. Adds member to JRM_CV.tex
+6. Rebuilds people.html
 
 Idempotent: Running twice with same name will update existing entry.
+Reactivation: Running on an alumni will move them back to active status.
 
 Usage:
     python onboard_member.py "First Last"
@@ -21,9 +23,10 @@ import argparse
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 
 import openpyxl
 
@@ -152,6 +155,11 @@ def find_photo(photo_hint: str, project_root: Path) -> Optional[Path]:
     return None
 
 
+def photo_already_processed(photo_base: str, project_root: Path) -> bool:
+    processed_photo = project_root / "images" / "people" / f"{photo_base}.png"
+    return processed_photo.exists()
+
+
 def process_photo(
     photo_path: Path, output_name: str, project_root: Path
 ) -> Optional[str]:
@@ -213,6 +221,126 @@ def member_exists_in_spreadsheet(
     return False, None
 
 
+def find_alumni_entry(xlsx_path: Path, name: str) -> Optional[Dict[str, Any]]:
+    """Find alumni entry across all alumni sheets. Returns dict with sheet name, row, and data."""
+    wb = openpyxl.load_workbook(xlsx_path)
+    name_lower = name.lower()
+    name_title = name.title().lower()
+
+    alumni_sheets = [
+        "alumni_postdocs",
+        "alumni_grads",
+        "alumni_managers",
+        "alumni_undergrads",
+    ]
+
+    for sheet_name in alumni_sheets:
+        if sheet_name not in wb.sheetnames:
+            continue
+        sheet = wb[sheet_name]
+        headers = [cell.value for cell in sheet[1]]
+
+        for row_idx, row in enumerate(
+            sheet.iter_rows(min_row=2, values_only=True), start=2
+        ):
+            if not row[0]:
+                continue
+            row_name = str(row[0]).lower()
+            if row_name == name_lower or row_name == name_title:
+                entry = {
+                    "sheet": sheet_name,
+                    "row_idx": row_idx,
+                    "name": row[0],
+                }
+                for i, header in enumerate(headers):
+                    if header and i < len(row):
+                        entry[header] = row[i]
+                wb.close()
+                return entry
+
+    wb.close()
+    return None
+
+
+def remove_from_alumni(xlsx_path: Path, alumni_entry: Dict[str, Any]) -> None:
+    """Remove an entry from the alumni sheet."""
+    wb = openpyxl.load_workbook(xlsx_path)
+    sheet = wb[alumni_entry["sheet"]]
+    sheet.delete_rows(alumni_entry["row_idx"])
+    wb.save(xlsx_path)
+    wb.close()
+    print(f"  Removed {alumni_entry['name']} from {alumni_entry['sheet']}")
+
+
+def get_bio_from_git_history(
+    xlsx_path: Path, name: str, project_root: Path
+) -> Optional[str]:
+    """Search git history for old bio in people.xlsx."""
+    name_lower = name.lower()
+    name_title = name.title().lower()
+
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "log",
+                "--oneline",
+                "--follow",
+                "--",
+                str(xlsx_path.relative_to(project_root)),
+            ],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return None
+
+        commits = [
+            line.split()[0] for line in result.stdout.strip().split("\n") if line
+        ]
+
+        for commit in commits[:20]:  # Limit to last 20 commits
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+                    tmp_path = tmp.name
+
+                extract_result = subprocess.run(
+                    ["git", "show", f"{commit}:{xlsx_path.relative_to(project_root)}"],
+                    cwd=project_root,
+                    capture_output=True,
+                )
+                if extract_result.returncode != 0:
+                    continue
+
+                with open(tmp_path, "wb") as f:
+                    f.write(extract_result.stdout)
+
+                wb = openpyxl.load_workbook(tmp_path)
+                if "members" in wb.sheetnames:
+                    sheet = wb["members"]
+                    for row in sheet.iter_rows(min_row=2, values_only=True):
+                        if row[1] and str(row[1]).lower() in [name_lower, name_title]:
+                            bio = row[4] if len(row) > 4 else None
+                            if bio and len(str(bio)) > 10:
+                                wb.close()
+                                Path(tmp_path).unlink(missing_ok=True)
+                                print(
+                                    f"  Found old bio in git history (commit {commit})"
+                                )
+                                return str(bio)
+                wb.close()
+                Path(tmp_path).unlink(missing_ok=True)
+
+            except Exception:
+                continue
+
+    except Exception as e:
+        print(f"  Note: Could not search git history: {e}")
+
+    return None
+
+
 def add_to_spreadsheet(
     xlsx_path: Path, name: str, role: str, bio: str, image: str, website: str
 ) -> None:
@@ -263,11 +391,74 @@ def member_exists_in_cv(cv_path: Path, name: str) -> bool:
     return bool(re.search(pattern, content, re.IGNORECASE))
 
 
+def cv_entry_has_end_date(cv_path: Path, name: str) -> bool:
+    """Check if CV entry has an end date (closed range)."""
+    content = cv_path.read_text(encoding="utf-8")
+    name_escaped = re.escape(name)
+    # Match: \item Name (YYYY -- YYYY) or \item Name (YYYY) but NOT \item Name (YYYY -- )
+    pattern_closed = r"\\item\s+" + name_escaped + r"\*?\s*\(\d{4}\s*--\s*\d{4}\)"
+    pattern_single = r"\\item\s+" + name_escaped + r"\*?\s*\(\d{4}\)"
+    pattern_open = r"\\item\s+" + name_escaped + r"\*?\s*\(\d{4}\s*--\s*\)"
+
+    has_open = bool(re.search(pattern_open, content, re.IGNORECASE))
+    has_closed = bool(re.search(pattern_closed, content, re.IGNORECASE))
+    has_single = (
+        bool(re.search(pattern_single, content, re.IGNORECASE))
+        and not has_open
+        and not has_closed
+    )
+
+    return has_closed or has_single
+
+
+def reopen_cv_entry(cv_path: Path, name: str) -> bool:
+    """Remove end date from CV entry: (YYYY -- YYYY) -> (YYYY -- ) or (YYYY) -> (YYYY -- )."""
+    content = cv_path.read_text(encoding="utf-8")
+    name_escaped = re.escape(name)
+
+    # Pattern for closed range: (YYYY -- YYYY)
+    pattern_closed = (
+        r"(\\item\s+" + name_escaped + r"\*?\s*\()(\d{4})(\s*--\s*)(\d{4})(\))"
+    )
+    # Pattern for single year: (YYYY) - but not (YYYY -- )
+    pattern_single = r"(\\item\s+" + name_escaped + r"\*?\s*\()(\d{4})(\))(?!\s*--)"
+
+    def reopen_closed(match):
+        prefix = match.group(1)
+        start_year = match.group(2)
+        suffix = match.group(5)
+        return f"{prefix}{start_year} -- {suffix}"
+
+    def reopen_single(match):
+        prefix = match.group(1)
+        year = match.group(2)
+        suffix = match.group(3)
+        return f"{prefix}{year} -- {suffix}"
+
+    new_content, count = re.subn(
+        pattern_closed, reopen_closed, content, flags=re.IGNORECASE
+    )
+    if count == 0:
+        new_content, count = re.subn(
+            pattern_single, reopen_single, content, flags=re.IGNORECASE
+        )
+
+    if count > 0:
+        cv_path.write_text(new_content, encoding="utf-8")
+        print(f"  Reopened CV entry for {name}")
+        return True
+
+    return False
+
+
 def add_to_cv(cv_path: Path, name: str, role: str, year: str) -> bool:
     content = cv_path.read_text(encoding="utf-8")
 
     if member_exists_in_cv(cv_path, name):
-        print(f"  {name} already exists in CV, skipping")
+        if cv_entry_has_end_date(cv_path, name):
+            print(f"  {name} exists in CV with end date, reopening...")
+            return reopen_cv_entry(cv_path, name)
+        print(f"  {name} already exists in CV with open date, skipping")
         return True
 
     role_lower = role.lower()
@@ -346,21 +537,32 @@ def onboard_member(
 
     print(f"\nOnboarding {name} as {rank}...")
 
-    image_filename = None
-    if photo is None:
-        photo = photo_base
+    alumni_entry = find_alumni_entry(xlsx_path, name)
+    is_reactivation = alumni_entry is not None
 
-    photo_path = find_photo(photo, project_root)
-    if photo_path:
-        print(f"  Found photo: {photo_path}")
-        image_filename = process_photo(photo_path, photo_base, project_root)
+    if is_reactivation:
+        print(f"  Found {name} in {alumni_entry['sheet']} - reactivating...")
+        remove_from_alumni(xlsx_path, alumni_entry)
+
+    image_filename = None
+
+    if photo_already_processed(photo_base, project_root):
+        print(f"  Using existing processed photo: {photo_base}.png")
+        image_filename = f"{photo_base}.png"
     else:
-        existing_photo = project_root / "images" / "people" / f"{photo_base}.png"
-        if existing_photo.exists():
-            print(f"  Using existing photo: {existing_photo}")
-            image_filename = f"{photo_base}.png"
+        if photo is None:
+            photo = photo_base
+
+        photo_path = find_photo(photo, project_root)
+        if photo_path:
+            print(f"  Found photo: {photo_path}")
+            image_filename = process_photo(photo_path, photo_base, project_root)
         else:
             print(f"  No photo found for {photo}")
+
+    if bio is None and is_reactivation:
+        print("  Searching git history for old bio...")
+        bio = get_bio_from_git_history(xlsx_path, name, project_root)
 
     if not skip_llm:
         if bio:
@@ -385,7 +587,8 @@ def onboard_member(
     if not skip_rebuild:
         rebuild_pages(project_root)
 
-    print(f"\nSuccessfully onboarded {name}!")
+    action = "reactivated" if is_reactivation else "onboarded"
+    print(f"\nSuccessfully {action} {name}!")
     return True
 
 
