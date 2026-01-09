@@ -326,8 +326,35 @@ def generate_undergrad_entry(alum: Dict[str, Any]) -> str:
     return f"{name}{paren_display}"
 
 
+def get_start_year(years_str: str) -> int:
+    """Extract start year from years string for sorting.
+
+    Args:
+        years_str: Years string like '2024-2026', '2025', or '2023-2025'
+
+    Returns:
+        Start year as integer (defaults to 0 if unparseable)
+    """
+    if not years_str:
+        return 0
+    years_str = str(years_str).strip()
+    # Handle "2024-2026" format - extract first year
+    if "-" in years_str:
+        try:
+            return int(years_str.split("-")[0])
+        except ValueError:
+            return 0
+    # Handle single year "2025"
+    try:
+        return int(years_str)
+    except ValueError:
+        return 0
+
+
 def generate_undergrad_list_content(alumni: List[Dict[str, Any]]) -> str:
     """Generate HTML content for undergraduate alumni list.
+
+    Alumni are sorted by start year (descending), matching CV order.
 
     Args:
         alumni: List of alumni dictionaries
@@ -338,7 +365,13 @@ def generate_undergrad_list_content(alumni: List[Dict[str, Any]]) -> str:
     if not alumni:
         return ""
 
-    entries = [generate_undergrad_entry(a) for a in alumni]
+    # Sort by start year descending (most recent first), then by name
+    sorted_alumni = sorted(
+        alumni,
+        key=lambda a: (-get_start_year(a.get("years", "")), a.get("name", ""))
+    )
+
+    entries = [generate_undergrad_entry(a) for a in sorted_alumni]
     return "<br>\n                        ".join(entries)
 
 
