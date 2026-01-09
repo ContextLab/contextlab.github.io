@@ -102,7 +102,8 @@ def prompt_for_selection(matches: List[Dict[str, Any]]) -> Optional[Dict[str, An
             print("Please enter a valid number")
 
 
-def move_to_alumni(xlsx_path: Path, member: Dict[str, Any], end_year: str) -> bool:
+def move_to_alumni(xlsx_path: Path, member: Dict[str, Any], years_string: str) -> bool:
+    """Move member to alumni sheet with the given years string (e.g., '2024-2026' or '2026')."""
     if member_already_alumni(xlsx_path, member["name"]):
         print(
             f"  {member['name']} is already in alumni list, skipping spreadsheet update"
@@ -118,12 +119,32 @@ def move_to_alumni(xlsx_path: Path, member: Dict[str, Any], end_year: str) -> bo
 
     alumni_sheet.insert_rows(2)
     alumni_sheet.cell(row=2, column=1, value=member["name"].title())
-    alumni_sheet.cell(row=2, column=2, value=end_year)
+    alumni_sheet.cell(row=2, column=2, value=years_string)
 
     wb.save(xlsx_path)
     wb.close()
-    print(f"  Moved {member['name']} to alumni_undergrads with year {end_year}")
+    print(f"  Moved {member['name']} to alumni_undergrads with years {years_string}")
     return True
+
+
+def get_cv_start_year(cv_path: Path, member_name: str) -> Optional[str]:
+    """Extract the start year from the CV entry for a member."""
+    content = cv_path.read_text(encoding="utf-8")
+    name_escaped = re.escape(member_name)
+
+    # Match open entry: \item Name[*]? (start_year -- )
+    pattern_open = r"\\item\s+" + name_escaped + r"\*?\s*\((\d{4})\s*--\s*\)"
+    match = re.search(pattern_open, content, re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    # Match closed entry: \item Name[*]? (start_year -- end_year) or (year)
+    pattern_closed = r"\\item\s+" + name_escaped + r"\*?\s*\((\d{4})(?:\s*--\s*\d{4})?\)"
+    match = re.search(pattern_closed, content, re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    return None
 
 
 def cv_entry_already_closed(cv_path: Path, member_name: str) -> bool:
@@ -235,7 +256,14 @@ def offboard_member(
 
     print(f"\nOffboarding {member['name']}...")
 
-    move_to_alumni(xlsx_path, member, end_year)
+    # Get start year from CV to create the full date range for alumni sheet
+    start_year = get_cv_start_year(cv_path, member["name"])
+    if start_year and start_year != end_year:
+        years_string = f"{start_year}-{end_year}"
+    else:
+        years_string = end_year
+
+    move_to_alumni(xlsx_path, member, years_string)
     update_cv_entry(cv_path, member["name"], end_year)
 
     print(f"\nSuccessfully offboarded {member['name']}")
