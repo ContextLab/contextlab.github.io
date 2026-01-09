@@ -275,6 +275,45 @@ def generate_members_content(members: List[Dict[str, Any]]) -> str:
     return "\n\n".join(grids)
 
 
+def format_position_display(current_position: str, current_position_url: str) -> str:
+    """Format the current position text with optional hyperlink.
+
+    Handles patterns like "now at X", "now a X", "then a X", "then at X".
+    If the position already contains such a pattern, uses it as-is and
+    hyperlinks just the relevant part. Otherwise prepends "now at".
+
+    Args:
+        current_position: The position text (may include prefix like "now at")
+        current_position_url: Optional URL to link
+
+    Returns:
+        Formatted position display string
+    """
+    if not current_position:
+        return ""
+
+    # Patterns that indicate the text already has a prefix
+    # Match: "now at ", "now a ", "then at ", "then a "
+    prefix_pattern = re.match(r'^(now at |now a |then at |then a )', current_position, re.IGNORECASE)
+
+    if prefix_pattern:
+        # Text already has a prefix - extract prefix and the rest
+        prefix = prefix_pattern.group(1)
+        rest = current_position[len(prefix):]
+
+        if current_position_url:
+            # Hyperlink just the part after the prefix
+            return f'{prefix}<a href="{current_position_url}" target="_blank">{rest}</a>'
+        else:
+            return current_position
+    else:
+        # No prefix - add "now at"
+        if current_position_url:
+            return f'now at <a href="{current_position_url}" target="_blank">{current_position}</a>'
+        else:
+            return f"now at {current_position}"
+
+
 def generate_alumni_entry(alum: Dict[str, Any]) -> str:
     """Generate HTML for a single alumni entry.
 
@@ -297,12 +336,7 @@ def generate_alumni_entry(alum: Dict[str, Any]) -> str:
         name_display = name
 
     # Build position display with optional link
-    if current_position and current_position_url:
-        position_display = f'now at <a href="{current_position_url}" target="_blank">{current_position}</a>'
-    elif current_position:
-        position_display = f"now at {current_position}"
-    else:
-        position_display = ""
+    position_display = format_position_display(current_position, current_position_url)
 
     # Build parenthetical info
     paren_parts = []
