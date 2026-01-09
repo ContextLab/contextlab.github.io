@@ -7,11 +7,51 @@ using the template in templates/people.html.
 
 import re
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import openpyxl
 
 from utils import inject_content
 from citation_utils import resolve_link
+
+
+def parse_cv_undergrad_order(cv_path: Path) -> List[str]:
+    """Parse the CV to get the order of undergraduate advisees.
+
+    The CV lists undergrads in reverse chronological order by join date
+    (most recent joiner first). This order is authoritative.
+
+    Args:
+        cv_path: Path to JRM_CV.tex
+
+    Returns:
+        List of names in CV order (first = highest priority)
+    """
+    if not cv_path.exists():
+        return []
+
+    content = cv_path.read_text(encoding="utf-8")
+
+    # Find the Undergraduate Advisees section
+    match = re.search(
+        r"\\textit\{Undergraduate Advisees\}.*?\\begin\{etaremune\}(.*?)\\end\{etaremune\}",
+        content,
+        re.DOTALL
+    )
+    if not match:
+        return []
+
+    section = match.group(1)
+
+    # Extract names from \item entries
+    # Format: \item Name[*]? (years)
+    names = []
+    for item_match in re.finditer(r"\\item\s+(.+?)\s*\(", section):
+        name = item_match.group(1).strip()
+        # Remove asterisk (senior thesis marker)
+        name = name.rstrip("*").strip()
+        names.append(name)
+
+    return names
 
 
 def parse_links_field(links_str: str) -> str:
@@ -326,38 +366,16 @@ def generate_undergrad_entry(alum: Dict[str, Any]) -> str:
     return f"{name}{paren_display}"
 
 
-def get_start_year(years_str: str) -> int:
-    """Extract start year from years string for sorting.
-
-    Args:
-        years_str: Years string like '2024-2026', '2025', or '2023-2025'
-
-    Returns:
-        Start year as integer (defaults to 0 if unparseable)
-    """
-    if not years_str:
-        return 0
-    years_str = str(years_str).strip()
-    # Handle "2024-2026" format - extract first year
-    if "-" in years_str:
-        try:
-            return int(years_str.split("-")[0])
-        except ValueError:
-            return 0
-    # Handle single year "2025"
-    try:
-        return int(years_str)
-    except ValueError:
-        return 0
-
-
-def generate_undergrad_list_content(alumni: List[Dict[str, Any]]) -> str:
+def generate_undergrad_list_content(
+    alumni: List[Dict[str, Any]], cv_order: Optional[List[str]] = None
+) -> str:
     """Generate HTML content for undergraduate alumni list.
 
-    Alumni are sorted by start year (descending), matching CV order.
+    Alumni are sorted to match CV order (reverse chronological by join date).
 
     Args:
         alumni: List of alumni dictionaries
+        cv_order: Optional list of names in CV order (from parse_cv_undergrad_order)
 
     Returns:
         HTML string with alumni entries separated by <br>
@@ -365,12 +383,18 @@ def generate_undergrad_list_content(alumni: List[Dict[str, Any]]) -> str:
     if not alumni:
         return ""
 
-    # Sort by start year descending (most recent first)
-    # Use stable sort to preserve spreadsheet order within same start year (matches CV)
-    sorted_alumni = sorted(
-        alumni,
-        key=lambda a: -get_start_year(a.get("years", ""))
-    )
+    # Create position map from CV order (lower = appears first)
+    cv_position = {}
+    if cv_order:
+        for i, name in enumerate(cv_order):
+            cv_position[name] = i
+
+    def sort_key(a):
+        name = a.get("name", "")
+        # Use CV position if available, otherwise put at end
+        return cv_position.get(name, 99999)
+
+    sorted_alumni = sorted(alumni, key=sort_key)
 
     entries = [generate_undergrad_entry(a) for a in sorted_alumni]
     return "<br>\n                        ".join(entries)
@@ -419,16 +443,22 @@ def generate_collaborators_content(collaborators: List[Dict[str, Any]]) -> str:
     return "\n                ".join(entries)
 
 
-def build_people(data_path: Path, template_path: Path, output_path: Path) -> None:
+def build_people(data_path: Path, template_path: Path, output_path: Path, cv_path: Optional[Path] = None) -> None:
     """Build people.html from data and template.
 
     Args:
         data_path: Path to people.xlsx
         template_path: Path to template HTML file
         output_path: Path for generated HTML file
+        cv_path: Optional path to JRM_CV.tex for ordering undergrad alumni
     """
     # Load data
     data = load_people(data_path)
+
+    # Get CV order for undergrad alumni
+    cv_order = []
+    if cv_path:
+        cv_order = parse_cv_undergrad_order(cv_path)
 
     # Generate content for each section
     director_content = ""
@@ -448,7 +478,7 @@ def build_people(data_path: Path, template_path: Path, output_path: Path) -> Non
             data.get("alumni_managers", [])
         ),
         "ALUMNI_UNDERGRADS_CONTENT": generate_undergrad_list_content(
-            data.get("alumni_undergrads", [])
+            data.get("alumni_undergrads", []), cv_order
         ),
         "COLLABORATORS_CONTENT": generate_collaborators_content(
             data.get("collaborators", [])
@@ -469,8 +499,9 @@ def main():
     data_path = project_root / "data" / "people.xlsx"
     template_path = project_root / "templates" / "people.html"
     output_path = project_root / "people.html"
+    cv_path = project_root / "documents" / "JRM_CV.tex"
 
-    build_people(data_path, template_path, output_path)
+    build_people(data_path, template_path, output_path, cv_path)
 
 
 if __name__ == "__main__":
