@@ -365,10 +365,11 @@ def generate_undergrad_list_content(alumni: List[Dict[str, Any]]) -> str:
     if not alumni:
         return ""
 
-    # Sort by start year descending (most recent first), then by name
+    # Sort by start year descending (most recent first)
+    # Use stable sort to preserve spreadsheet order within same start year (matches CV)
     sorted_alumni = sorted(
         alumni,
-        key=lambda a: (-get_start_year(a.get("years", "")), a.get("name", ""))
+        key=lambda a: -get_start_year(a.get("years", ""))
     )
 
     entries = [generate_undergrad_entry(a) for a in sorted_alumni]
