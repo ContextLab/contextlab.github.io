@@ -29,3 +29,4 @@ venv/
 
 # Claude skills (local only)
 .claude/
+data/~$publications.xlsx
