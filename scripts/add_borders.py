@@ -23,6 +23,13 @@ from PIL import Image
 import numpy as np
 import io
 
+# Register HEIC/HEIF support so Pillow can open .heic files
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass  # HEIC support unavailable; .heic files will be skipped
+
 
 # Border regions in the SVG (10 borders in a 2x5 grid)
 # Each tuple is (x, y, width, height) in SVG coordinates
@@ -359,7 +366,7 @@ def collect_image_files(inputs: list) -> list:
     Returns:
         List of image file paths (PNG, JPG, JPEG)
     """
-    image_extensions = {'.png', '.jpg', '.jpeg'}
+    image_extensions = {'.png', '.jpg', '.jpeg', '.heic', '.heif'}
     image_files = []
 
     for input_path in inputs:
@@ -462,7 +469,7 @@ def main():
         'inputs',
         type=Path,
         nargs='+',
-        help='Input PNG/JPG files or directories containing images'
+        help='Input PNG/JPG/HEIC files or directories containing images'
     )
     parser.add_argument(
         'output_dir',
