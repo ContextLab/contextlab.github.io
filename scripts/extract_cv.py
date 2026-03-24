@@ -630,6 +630,8 @@ def generate_html(tex_content: str) -> str:
             </script>
         </footer>
     </div>
+    <script data-goatcounter="https://context-lab.goatcounter.com/count"
+            async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
 ''')
