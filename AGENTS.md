@@ -20,6 +20,7 @@ contextlab.github.io/
 ├── scripts/            # Python build system (see scripts/AGENTS.md)
 ├── images/             # Assets: people/, publications/, software/, research/, news/
 ├── documents/          # CV files (JRM_CV.tex → .pdf, .html)
+├── lab-manual/         # Git submodule (ContextLab/lab-manual)
 └── tests/              # pytest suite for build system
 ```
 
@@ -29,7 +30,8 @@ contextlab.github.io/
 |------|----------|-------|
 | Add publication | `data/publications.xlsx` | Auto-builds via GitHub Actions |
 | Add team member | `scripts/onboard_member.py` | Processes photo, generates bio, updates CV |
-| Offboard member | `scripts/offboard_member.py` | Moves to alumni, updates CV |
+| Offboard member | `scripts/offboard_member.py` | Moves to alumni, updates CV + lab-manual |
+| Reconcile people | `scripts/reconcile_people.py` | Three-way sync: people.xlsx ↔ CV ↔ lab-manual |
 | Add software | `data/software.xlsx` | |
 | Add news | `data/news.xlsx` | Thumbnail in `images/news/` |
 | Update CV | `documents/JRM_CV.tex` | Auto-compiles to PDF+HTML |

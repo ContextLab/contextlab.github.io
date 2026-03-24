@@ -103,14 +103,14 @@
 
 **Purpose**: Documentation and final validation
 
-- [ ] T029 [P] Update `CLAUDE.md`: add reconcile command, submodule setup instructions, note lab-manual submodule under architecture
-- [ ] T030 [P] Update `AGENTS.md`: add `reconcile_people.py` and `parse_lab_manual.py` to structure and WHERE TO LOOK table
-- [ ] T031 [P] Update `scripts/AGENTS.md`: add new scripts to structure, commands, and conventions sections
+- [x] T029 [P] Update `CLAUDE.md`: add reconcile command, submodule setup instructions, note lab-manual submodule under architecture
+- [x] T030 [P] Update `AGENTS.md`: add `reconcile_people.py` and `parse_lab_manual.py` to structure and WHERE TO LOOK table
+- [x] T031 [P] Update `scripts/AGENTS.md`: add new scripts to structure, commands, and conventions sections
 - [ ] T032 [P] Update `README.md`: add submodule setup instructions, reconciliation documentation, updated onboard/offboard examples
-- [ ] T033 Run `python reconcile_people.py --dry-run` against real production data and review the discrepancy report
+- [x] T033 Run `python reconcile_people.py --dry-run` against real production data and review the discrepancy report
 - [ ] T034 Run `python reconcile_people.py` to apply auto-fixes to real data (after T033 review)
-- [ ] T035 Run full test suite: `python -m pytest tests/ -v` — all tests MUST pass
-- [ ] T036 Run `cd scripts && python pre_push_check.py` for full pre-push validation
+- [x] T035 Run full test suite: `python -m pytest tests/ -v` — all tests MUST pass
+- [x] T036 Run `cd scripts && python pre_push_check.py` for full pre-push validation
 
 ---
 

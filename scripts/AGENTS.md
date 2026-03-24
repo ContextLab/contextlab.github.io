@@ -19,7 +19,9 @@ scripts/
 ├── citation_utils.py     # Publication citation formatting
 ├── add_borders.py        # Image processing (hand-drawn borders)
 ├── onboard_member.py     # Add new lab members (with LLM bio generation)
-└── offboard_member.py    # Move members from active to alumni
+├── offboard_member.py    # Move members from active to alumni
+├── parse_lab_manual.py   # Parse lab_manual.tex members chapter + write helpers
+└── reconcile_people.py   # Three-way sync: people.xlsx ↔ CV ↔ lab-manual
 ```
 
 ## WHERE TO LOOK
@@ -32,8 +34,10 @@ scripts/
 | Fix validation | `validate_data.py` | Required fields, file existence checks |
 | Fix CV parsing | `extract_cv.py` | LaTeX commands → HTML |
 | Fix image borders | `add_borders.py` | Uses MediaPipe for face detection |
-| Onboard lab member | `onboard_member.py` | Processes photo, generates bio, updates spreadsheet + CV |
-| Offboard lab member | `offboard_member.py` | Moves member to alumni, updates CV |
+| Onboard lab member | `onboard_member.py` | Processes photo, generates bio, updates spreadsheet + CV + lab-manual |
+| Offboard lab member | `offboard_member.py` | Moves member to alumni, updates CV + lab-manual |
+| Reconcile people data | `reconcile_people.py` | Three-way sync: people.xlsx ↔ CV ↔ lab-manual |
+| Parse lab-manual members | `parse_lab_manual.py` | Extract/write members in lab_manual.tex |
 
 ## CONVENTIONS
 
