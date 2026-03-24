@@ -50,16 +50,16 @@
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Create `scripts/reconcile_people.py` with CLI interface supporting `--dry-run` flag
-- [ ] T012 [US1] Implement source loading: load people.xlsx via `utils.load_spreadsheet_all_sheets()`, parse JRM_CV.tex via `parse_cv_trainees.parse_trainees()`, parse lab_manual.tex via `parse_lab_manual.parse_members_chapter()`
-- [ ] T013 [US1] Implement name normalization: lowercase, strip whitespace, integrate nickname table from `scripts/sync_cv_people.py`
-- [ ] T014 [US1] Implement three-way matching using: (a) exact match (case-insensitive), (b) nickname table lookup, (c) fuzzy match via `difflib.SequenceMatcher` with 0.85 threshold
-- [ ] T015 [US1] Implement discrepancy categorization: (a) in people.xlsx but not CV → auto-add to CV, (b) in people.xlsx but not lab-manual → auto-add to lab-manual, (c) in lab-manual but not people.xlsx → add + FLAG, (d) in CV but not people.xlsx → add + FLAG, (e) near-matches → FLAG
-- [ ] T016 [US1] Implement auto-fix application (when not `--dry-run`): add missing entries to people.xlsx, add missing entries to JRM_CV.tex (import `add_to_cv()` from `scripts/onboard_member.py` or extract to shared module), add missing entries to lab_manual.tex (reuse writer from T017)
-- [ ] T017 [US1] Implement lab_manual.tex writer: add `\item Name (YYYY -- )` to correct `\newthought{Role}` section under correct subsection (Current/Alumni)
-- [ ] T018 [US1] Implement report output to stdout with sections: "Auto-resolved", "Flagged for review", "Conflicts requiring manual resolution"
+- [x] T011 [US1] Create `scripts/reconcile_people.py` with CLI interface supporting `--dry-run` flag
+- [x] T012 [US1] Implement source loading: load people.xlsx via `utils.load_spreadsheet_all_sheets()`, parse JRM_CV.tex via `parse_cv_trainees.parse_trainees()`, parse lab_manual.tex via `parse_lab_manual.parse_members_chapter()`
+- [x] T013 [US1] Implement name normalization: lowercase, strip whitespace, integrate nickname table from `scripts/sync_cv_people.py`
+- [x] T014 [US1] Implement three-way matching using: (a) exact match (case-insensitive), (b) nickname table lookup, (c) fuzzy match via `difflib.SequenceMatcher` with 0.85 threshold
+- [x] T015 [US1] Implement discrepancy categorization: (a) in people.xlsx but not CV → auto-add to CV, (b) in people.xlsx but not lab-manual → auto-add to lab-manual, (c) in lab-manual but not people.xlsx → add + FLAG, (d) in CV but not people.xlsx → add + FLAG, (e) near-matches → FLAG
+- [x] T016 [US1] Implement auto-fix application (when not `--dry-run`): add missing entries to people.xlsx, add missing entries to JRM_CV.tex (import `add_to_cv()` from `scripts/onboard_member.py` or extract to shared module), add missing entries to lab_manual.tex (reuse writer from T017)
+- [x] T017 [US1] Implement lab_manual.tex writer: add `\item Name (YYYY -- )` to correct `\newthought{Role}` section under correct subsection (Current/Alumni)
+- [x] T018 [US1] Implement report output to stdout with sections: "Auto-resolved", "Flagged for review", "Conflicts requiring manual resolution"
 - [ ] T019 [US1] After auto-fixes, rebuild people.html via `build_people` and commit/push lab-manual submodule changes (reuse `commit_and_push_lab_manual()` from T009a)
-- [ ] T020 [P] [US1] Create `tests/test_reconcile_people.py` with tests for: exact match, nickname match, fuzzy match (including 0.85 threshold boundary — verify 0.84 is rejected and 0.86 is accepted), fuzzy match against corpus of 20+ name variation pairs (nicknames, abbreviations, typos, hyphenated names), auto-add from people.xlsx, flag from lab-manual, dry-run mode, report formatting (verify output contains distinct "Auto-resolved", "Flagged for review", and "Conflicts" sections)
+- [x] T020 [P] [US1] Create `tests/test_reconcile_people.py` with tests for: exact match, nickname match, fuzzy match (including 0.85 threshold boundary — verify 0.84 is rejected and 0.86 is accepted), fuzzy match against corpus of 20+ name variation pairs (nicknames, abbreviations, typos, hyphenated names), auto-add from people.xlsx, flag from lab-manual, dry-run mode, report formatting (verify output contains distinct "Auto-resolved", "Flagged for review", and "Conflicts" sections)
 
 **Checkpoint**: Reconciliation tool correctly identifies and resolves discrepancies across all three sources
 
