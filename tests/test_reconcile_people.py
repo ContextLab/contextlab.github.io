@@ -223,10 +223,10 @@ class TestReconcileIntegration:
         discrepancies = reconcile(dry_run=True)
         assert isinstance(discrepancies, list)
 
-    def test_reconcile_finds_discrepancies(self):
-        """Real data has some discrepancies (lab-manual has people not yet in xlsx)."""
+    def test_reconcile_returns_list(self):
+        """Reconciliation returns a list of discrepancies (may be empty if synced)."""
         discrepancies = reconcile(dry_run=True)
-        assert len(discrepancies) > 0
+        assert isinstance(discrepancies, list)
 
     def test_reconcile_dry_run_doesnt_modify(self):
         """Dry run should not modify any files."""
