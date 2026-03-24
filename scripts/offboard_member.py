@@ -266,6 +266,26 @@ def offboard_member(
     move_to_alumni(xlsx_path, member, years_string)
     update_cv_entry(cv_path, member["name"], end_year)
 
+    # Update lab-manual (best-effort; failure doesn't block offboarding)
+    try:
+        from parse_lab_manual import move_member_to_alumni as lm_move, commit_and_push_lab_manual
+        lab_manual_tex = project_root / 'lab-manual' / 'lab_manual.tex'
+        if lab_manual_tex.exists():
+            print("  Updating lab-manual...")
+            lm_move(lab_manual_tex, member["name"], end_year)
+            try:
+                commit_and_push_lab_manual(
+                    project_root / 'lab-manual',
+                    f"Offboard {member['name']}"
+                )
+                print(f"  Updated lab-manual and pushed to remote")
+            except RuntimeError as e:
+                print(f"  WARNING: Lab-manual updated locally but push failed: {e}")
+        else:
+            print("  NOTE: Lab-manual submodule not found, skipping lab-manual update")
+    except Exception as e:
+        print(f"  WARNING: Could not update lab-manual: {e}")
+
     print(f"\nSuccessfully offboarded {member['name']}")
     print("Run 'python build.py' to rebuild people.html")
 

@@ -1067,6 +1067,26 @@ def onboard_member(
     print("\nUpdating CV...")
     add_to_cv(cv_path, name, rank, current_year)
 
+    # Update lab-manual (best-effort; failure doesn't block onboarding)
+    try:
+        from parse_lab_manual import add_member_to_lab_manual, commit_and_push_lab_manual
+        lab_manual_tex = project_root / 'lab-manual' / 'lab_manual.tex'
+        if lab_manual_tex.exists():
+            print("\nUpdating lab-manual...")
+            add_member_to_lab_manual(lab_manual_tex, name, rank, current_year)
+            try:
+                commit_and_push_lab_manual(
+                    project_root / 'lab-manual',
+                    f"Onboard {name}"
+                )
+                print(f"  Updated lab-manual and pushed to remote")
+            except RuntimeError as e:
+                print(f"  WARNING: Lab-manual updated locally but push failed: {e}")
+        else:
+            print("  NOTE: Lab-manual submodule not found, skipping lab-manual update")
+    except Exception as e:
+        print(f"  WARNING: Could not update lab-manual: {e}")
+
     if github_username:
         invite_to_github_org(github_username, github_teams)
 

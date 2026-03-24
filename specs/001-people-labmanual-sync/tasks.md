@@ -73,11 +73,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Refactor T017's lab_manual.tex writer into shared helper `add_member_to_lab_manual(tex_path, name, role, start_year)` in `scripts/parse_lab_manual.py` (depends on T017). Inserts `\item Name (YYYY -- )` into correct `\newthought{Role}` section under `\subsection{Current lab members}`
-- [ ] T022 [US2] Create shared helper function in `scripts/parse_lab_manual.py`: `move_member_to_alumni(tex_path, name, end_year)` that moves entry from Current to Alumni section and closes the year range
-- [ ] T023 [US2] Update `scripts/onboard_member.py`: after existing people.xlsx + JRM_CV.tex updates, call `add_member_to_lab_manual()` and `commit_and_push_lab_manual()` (from T009a), wrapped in try/except with warning on failure
-- [ ] T024 [US2] Update `scripts/offboard_member.py`: after existing people.xlsx + JRM_CV.tex updates, call `move_member_to_alumni()` and `commit_and_push_lab_manual()` (from T009a), wrapped in try/except with warning on failure
-- [ ] T025 [P] [US2] Add tests to `tests/test_parse_lab_manual.py` for: add_member_to_lab_manual (correct section, correct format), move_member_to_alumni (removal + insertion)
+- [x] T021 [US2] Refactor T017's lab_manual.tex writer into shared helper `add_member_to_lab_manual(tex_path, name, role, start_year)` in `scripts/parse_lab_manual.py` (depends on T017). Inserts `\item Name (YYYY -- )` into correct `\newthought{Role}` section under `\subsection{Current lab members}`
+- [x] T022 [US2] Create shared helper function in `scripts/parse_lab_manual.py`: `move_member_to_alumni(tex_path, name, end_year)` that moves entry from Current to Alumni section and closes the year range
+- [x] T023 [US2] Update `scripts/onboard_member.py`: after existing people.xlsx + JRM_CV.tex updates, call `add_member_to_lab_manual()` and `commit_and_push_lab_manual()` (from T009a), wrapped in try/except with warning on failure
+- [x] T024 [US2] Update `scripts/offboard_member.py`: after existing people.xlsx + JRM_CV.tex updates, call `move_member_to_alumni()` and `commit_and_push_lab_manual()` (from T009a), wrapped in try/except with warning on failure
+- [x] T025 [P] [US2] Add tests to `tests/test_parse_lab_manual.py` for: add_member_to_lab_manual (correct section, correct format), move_member_to_alumni (removal + insertion)
 
 **Checkpoint**: Onboard/offboard scripts update all three destinations; lab-manual failures warn but don't block
 
