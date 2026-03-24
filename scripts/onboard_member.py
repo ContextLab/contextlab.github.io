@@ -613,8 +613,44 @@ def find_photo(photo_hint: str, project_root: Path) -> Optional[Path]:
 
 
 def photo_already_processed(photo_base: str, project_root: Path) -> bool:
+    """Check if a photo has already been processed with hand-drawn borders.
+
+    Verifies three conditions:
+    1. The PNG file exists
+    2. Resolution is 500x500 (the output size of add_borders.py)
+    3. Corner pixels are transparent (borders leave transparent margins)
+    """
     processed_photo = project_root / "images" / "people" / f"{photo_base}.png"
-    return processed_photo.exists()
+    if not processed_photo.exists():
+        return False
+
+    try:
+        from PIL import Image
+        img = Image.open(processed_photo)
+
+        w, h = img.size
+
+        # Check that image is square (bordered images are always square)
+        if w != h:
+            return False
+
+        # Check that corner pixels are transparent (hand-drawn borders
+        # leave transparent margins around the image)
+        if img.mode != 'RGBA':
+            return False
+        corners = [
+            img.getpixel((0, 0)),
+            img.getpixel((w - 1, 0)),
+            img.getpixel((0, h - 1)),
+            img.getpixel((w - 1, h - 1)),
+        ]
+        # All corners should be fully transparent (alpha == 0)
+        if not all(c[3] == 0 for c in corners):
+            return False
+
+        return True
+    except Exception:
+        return False
 
 
 def process_photo(
@@ -1066,6 +1102,26 @@ def onboard_member(
 
     print("\nUpdating CV...")
     add_to_cv(cv_path, name, rank, current_year)
+
+    # Update lab-manual (best-effort; failure doesn't block onboarding)
+    try:
+        from parse_lab_manual import add_member_to_lab_manual, commit_and_push_lab_manual
+        lab_manual_tex = project_root / 'lab-manual' / 'lab_manual.tex'
+        if lab_manual_tex.exists():
+            print("\nUpdating lab-manual...")
+            add_member_to_lab_manual(lab_manual_tex, name, rank, current_year)
+            try:
+                commit_and_push_lab_manual(
+                    project_root / 'lab-manual',
+                    f"Onboard {name}"
+                )
+                print(f"  Updated lab-manual and pushed to remote")
+            except RuntimeError as e:
+                print(f"  WARNING: Lab-manual updated locally but push failed: {e}")
+        else:
+            print("  NOTE: Lab-manual submodule not found, skipping lab-manual update")
+    except Exception as e:
+        print(f"  WARNING: Could not update lab-manual: {e}")
 
     if github_username:
         invite_to_github_org(github_username, github_teams)

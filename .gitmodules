@@ -1,0 +1,3 @@
+[submodule "lab-manual"]
+	path = lab-manual
+	url = https://github.com/ContextLab/lab-manual.git
