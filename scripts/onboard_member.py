@@ -613,8 +613,44 @@ def find_photo(photo_hint: str, project_root: Path) -> Optional[Path]:
 
 
 def photo_already_processed(photo_base: str, project_root: Path) -> bool:
+    """Check if a photo has already been processed with hand-drawn borders.
+
+    Verifies three conditions:
+    1. The PNG file exists
+    2. Resolution is 500x500 (the output size of add_borders.py)
+    3. Corner pixels are transparent (borders leave transparent margins)
+    """
     processed_photo = project_root / "images" / "people" / f"{photo_base}.png"
-    return processed_photo.exists()
+    if not processed_photo.exists():
+        return False
+
+    try:
+        from PIL import Image
+        img = Image.open(processed_photo)
+
+        w, h = img.size
+
+        # Check that image is square (bordered images are always square)
+        if w != h:
+            return False
+
+        # Check that corner pixels are transparent (hand-drawn borders
+        # leave transparent margins around the image)
+        if img.mode != 'RGBA':
+            return False
+        corners = [
+            img.getpixel((0, 0)),
+            img.getpixel((w - 1, 0)),
+            img.getpixel((0, h - 1)),
+            img.getpixel((w - 1, h - 1)),
+        ]
+        # All corners should be fully transparent (alpha == 0)
+        if not all(c[3] == 0 for c in corners):
+            return False
+
+        return True
+    except Exception:
+        return False
 
 
 def process_photo(
