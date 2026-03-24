@@ -223,6 +223,7 @@ The script will:
 - Generate or edit the bio using a local LLM (gpt-oss-20b)
 - Add the member to `people.xlsx`
 - Add the member to `JRM_CV.tex`
+- Update `lab_manual.tex` in the lab-manual submodule (if initialized)
 - Invite to GitHub organization and teams (if `--github` provided)
 - Share Google Calendars with appropriate permissions (if `--gmail` provided)
 - Rebuild `people.html`
@@ -268,9 +269,30 @@ python offboard_member.py --list-no-photo
 The script will:
 - Move the member from `members` sheet to `alumni_undergrads` in `people.xlsx`
 - Update `JRM_CV.tex` to add the end date
+- Update `lab_manual.tex` in the lab-manual submodule (if initialized)
 - Prompt to rebuild `people.html`
 
 **Idempotent**: Running twice with the same name detects the member is already offboarded.
+
+#### Reconciling People Data
+
+The reconciliation tool compares member/alumni data across `people.xlsx` (source of truth), `JRM_CV.tex`, and the lab-manual's `lab_manual.tex`:
+
+```bash
+cd scripts
+
+# Report discrepancies without making changes
+python reconcile_people.py --dry-run
+
+# Apply auto-fixes (people.xlsx entries missing from other sources)
+python reconcile_people.py
+```
+
+The tool uses fuzzy name matching to catch spelling variations and nicknames. Discrepancies are categorized as:
+- **Auto-resolved**: People in people.xlsx missing from CV or lab-manual (auto-added)
+- **Flagged for review**: People in other sources missing from people.xlsx (requires manual review)
+
+**Requires**: Lab-manual submodule initialized (`git submodule update --init`)
 
 #### Adding Alumni (Manual)
 
@@ -300,6 +322,9 @@ The script will:
 ```bash
 # Install dependencies
 pip install -r requirements-build.txt
+
+# Initialize lab-manual submodule (required for reconciliation)
+git submodule update --init
 
 # Validate data files
 python scripts/validate_data.py
