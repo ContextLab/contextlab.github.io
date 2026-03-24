@@ -23,12 +23,26 @@ def run_script(script_name: str) -> bool:
     return result.returncode == 0
 
 
+def check_submodule() -> bool:
+    """Check if lab-manual submodule is initialized."""
+    lab_manual = Path(__file__).parent.parent / 'lab-manual' / 'lab_manual.tex'
+    if not lab_manual.exists():
+        print("\nWARNING: Lab-manual submodule not initialized.")
+        print("Run: git submodule update --init")
+        print("Some sync features will not work without it.\n")
+        return False
+    return True
+
+
 def main():
     """Run all pre-push checks."""
     print("Context Lab Website Pre-Push Check")
     print("=" * 50)
 
     all_passed = True
+
+    # Step 0: Check submodule
+    check_submodule()  # Warning only, doesn't block
 
     # Step 1: Validate data
     if not run_script('validate_data.py'):

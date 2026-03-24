@@ -91,8 +91,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Update `.github/workflows/build-cv.yml` to init submodule before build steps (if reconciliation or CV sync references lab-manual)
-- [ ] T027 [US3] Add submodule initialization check to `scripts/pre_push_check.py`: warn if submodule is not initialized when running checks that depend on it
+- [x] T026 [US3] Update `.github/workflows/build-cv.yml` to init submodule before build steps (if reconciliation or CV sync references lab-manual)
+- [x] T027 [US3] Add submodule initialization check to `scripts/pre_push_check.py`: warn if submodule is not initialized when running checks that depend on it
 - [ ] T028 [US3] Test that GitHub Actions workflows succeed with the submodule (verify CI can access lab-manual/lab_manual.tex)
 
 **Checkpoint**: Submodule works in local dev AND CI environments
