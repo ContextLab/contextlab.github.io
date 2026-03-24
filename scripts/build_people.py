@@ -350,8 +350,17 @@ def generate_alumni_entry(alum: Dict[str, Any]) -> str:
     return f"{name_display}{paren_display}"
 
 
+def _parse_start_year(years_str: str) -> int:
+    """Extract start year from a years string like '2019-2021' or '2021'."""
+    if not years_str:
+        return 0
+    return int(str(years_str).split('-')[0].strip())
+
+
 def generate_alumni_list_content(alumni: List[Dict[str, Any]]) -> str:
     """Generate HTML content for an alumni list (postdocs, grads, managers).
+
+    Alumni are sorted in reverse chronological order by start year.
 
     Args:
         alumni: List of alumni dictionaries
@@ -362,7 +371,12 @@ def generate_alumni_list_content(alumni: List[Dict[str, Any]]) -> str:
     if not alumni:
         return ""
 
-    entries = [generate_alumni_entry(a) for a in alumni]
+    sorted_alumni = sorted(
+        alumni,
+        key=lambda a: _parse_start_year(a.get('years', '')),
+        reverse=True,
+    )
+    entries = [generate_alumni_entry(a) for a in sorted_alumni]
     return "<br>\n                    ".join(entries)
 
 
@@ -417,16 +431,19 @@ def generate_undergrad_list_content(
     if not alumni:
         return ""
 
-    # Create position map from CV order (lower = appears first)
+    # Sort by start year descending (reverse chronological),
+    # falling back to CV order for ties
     cv_position = {}
     if cv_order:
         for i, name in enumerate(cv_order):
             cv_position[name] = i
 
     def sort_key(a):
+        start_year = _parse_start_year(a.get("years", ""))
         name = a.get("name", "")
-        # Use CV position if available, otherwise put at end
-        return cv_position.get(name, 99999)
+        cv_pos = cv_position.get(name, 99999)
+        # Negate start_year for descending; use cv_pos as tiebreaker
+        return (-start_year, cv_pos)
 
     sorted_alumni = sorted(alumni, key=sort_key)
 
