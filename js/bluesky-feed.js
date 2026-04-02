@@ -5,7 +5,7 @@
     'use strict';
 
     const BLUESKY_HANDLE = 'contextlab.bsky.social';
-    const API_URL = `https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${BLUESKY_HANDLE}&limit=10`;
+    const API_URL = `https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${BLUESKY_HANDLE}&limit=10&filter=posts_no_replies`;
     const FEED_CONTAINER_ID = 'bluesky-feed';
 
     /**
@@ -284,17 +284,12 @@
                 return;
             }
 
-            // Filter out replies (only show original posts)
-            const originalPosts = feedItems.filter(function(item) {
-                return !item.post.record.reply;
-            });
-
             // Create posts container
             const postsDiv = document.createElement('div');
             postsDiv.className = 'bluesky-posts';
 
             // Render each post
-            originalPosts.forEach(function(item) {
+            feedItems.forEach(function(item) {
                 postsDiv.appendChild(renderBlueskyPost(item));
             });
 
