@@ -550,11 +550,12 @@ model, tokenizer = load("{LLM_MODEL}")
 
 prompt = tokenizer.apply_chat_template(
     [{{"role": "user", "content": """Edit this bio. Rules:
-1. Use only first name "{first_name}" (remove last name)
-2. Fix typos and grammar  
-3. Keep 1-3 sentences max
-4. Remove dangerous personal info (SSN, addresses, phone numbers)
-5. Keep professional and friendly tone
+1. Write in third person (he/she/they), NOT first person. Never start with "Hi", "I am", or "I'm".
+2. Start the bio with the first name "{first_name}" (e.g., "{first_name} is a..."). Do not include the last name.
+3. Fix typos and grammar
+4. Keep 1-3 sentences max
+5. Remove dangerous personal info (SSN, addresses, phone numbers)
+6. Keep professional and friendly tone
 
 Original: "{bio_escaped}"
 
