@@ -29,4 +29,6 @@ venv/
 
 # Claude skills (local only)
 .claude/
+.omc/
+.specify/
 data/~$publications.xlsx
