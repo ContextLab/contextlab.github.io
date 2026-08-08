@@ -27,6 +27,18 @@ venv/
 # ML models (downloaded on demand)
 *.tflite
 
+# LaTeX build artifacts (build_cv.py cleans these; manual runs leave them behind)
+*.aux
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.out
+*.synctex.gz
+*.toc
+documents/*.log
+missfont.log
+
 # Claude skills (local only)
 .claude/
 .omc/
