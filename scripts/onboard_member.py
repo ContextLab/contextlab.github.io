@@ -903,24 +903,18 @@ def member_exists_in_cv(cv_path: Path, name: str) -> bool:
     return bool(re.search(pattern, content, re.IGNORECASE))
 
 
-def cv_entry_has_end_date(cv_path: Path, name: str) -> bool:
-    """Check if CV entry has an end date (closed range)."""
+def cv_entry_is_open(cv_path: Path, name: str) -> bool:
+    """Does `name` have an open-ended CV entry -- '(... -- )'?
+
+    Asking about open rather than closed entries matters once someone can hold
+    two entries at once. Paxton Fitzpatrick has a closed '(2017 -- 2019)' under
+    Undergraduate Advisees AND an open '(Doctoral student; 2021 -- )' under
+    Graduate Advisees; a has-an-end-date question answers True for him and
+    would send onboarding off to "reopen" the finished undergraduate range.
+    """
     content = cv_path.read_text(encoding="utf-8")
-    name_escaped = re.escape(name)
-    # Match: \item Name (YYYY -- YYYY) or \item Name (YYYY) but NOT \item Name (YYYY -- )
-    pattern_closed = r"\\item\s+" + name_escaped + r"\*?\s*\(\d{4}\s*--\s*\d{4}\)"
-    pattern_single = r"\\item\s+" + name_escaped + r"\*?\s*\(\d{4}\)"
-    pattern_open = r"\\item\s+" + name_escaped + r"\*?\s*\(\d{4}\s*--\s*\)"
-
-    has_open = bool(re.search(pattern_open, content, re.IGNORECASE))
-    has_closed = bool(re.search(pattern_closed, content, re.IGNORECASE))
-    has_single = (
-        bool(re.search(pattern_single, content, re.IGNORECASE))
-        and not has_open
-        and not has_closed
-    )
-
-    return has_closed or has_single
+    pattern = r"\\item\s+" + re.escape(name) + r"\*?\s*\([^)]*--\s*\)"
+    return bool(re.search(pattern, content, re.IGNORECASE))
 
 
 def reopen_cv_entry(cv_path: Path, name: str) -> bool:
@@ -963,40 +957,138 @@ def reopen_cv_entry(cv_path: Path, name: str) -> bool:
     return False
 
 
-def add_to_cv(cv_path: Path, name: str, role: str, year: str) -> bool:
-    content = cv_path.read_text(encoding="utf-8")
+# The three mentorship subsections of JRM_CV.tex, in document order. The
+# marker locates an existing entry's section; the pattern anchors an insert.
+CV_SECTIONS = {
+    "postdoc": {
+        "label": "Postdoctoral Advisees",
+        "marker": r"\textit{Postdoctoral Advisees}:",
+        "pattern": r"(\\textit\{Postdoctoral Advisees\}:\s*\n\\begin\{etaremune\})",
+        "entry": "\\item {name} ({year} -- )",
+    },
+    "grad": {
+        "label": "Graduate Advisees",
+        "marker": r"\textit{Graduate Advisees}:",
+        "pattern": r"(\\textit\{Graduate Advisees\}:\s*\n\\begin\{etaremune\})",
+        "entry": "\\item {name} (Doctoral student; {year} -- )",
+    },
+    "undergrad": {
+        "label": "Undergraduate Advisees",
+        "marker": r"\textit{Undergraduate Advisees}:",
+        "pattern": (
+            r"(\\textit\{Undergraduate Advisees\}:\s*\n\\blfootnote\{[^}]*\}\s*\n"
+            r"\\begin\{multicols\}\{2\}\s*\n\\begin\{etaremune\})"
+        ),
+        "entry": "\\item {name} ({year} -- )",
+    },
+}
 
-    if member_exists_in_cv(cv_path, name):
-        if cv_entry_has_end_date(cv_path, name):
-            print(f"  {name} exists in CV with end date, reopening...")
-            return reopen_cv_entry(cv_path, name)
-        print(f"  {name} already exists in CV with open date, skipping")
+
+def cv_section_for_role(role: str) -> Optional[str]:
+    """Which CV mentorship section a role belongs in, or None for no entry.
+
+    Two deliberate rules, confirmed by the lab director:
+      - Lab managers are staff rather than trainees, so they get NO CV entry.
+        Returning None here is the point; before this they were filed under
+        Undergraduate Advisees by the catch-all branch (issue #17).
+      - Research assistants ARE listed among the undergraduate advisees. That
+        is intended, not an accidental fallthrough.
+    """
+    role_lower = role.lower()
+    if "lab manager" in role_lower:
+        return None
+    if "postdoc" in role_lower:
+        return "postdoc"
+    if "grad" in role_lower and "undergrad" not in role_lower:
+        return "grad"
+    return "undergrad"
+
+
+def find_cv_section(cv_path: Path, name: str) -> Optional[str]:
+    """Which CV section `name` is currently listed under, or None if absent.
+
+    An open-ended entry wins over a closed one, so someone with a closed
+    undergrad range and an open doctoral range reads as a current grad -- the
+    shape Paxton Fitzpatrick is recorded in.
+    """
+    content = cv_path.read_text(encoding="utf-8")
+    name_escaped = re.escape(name)
+
+    entry = re.search(
+        r"\\item\s+" + name_escaped + r"\*?\s*\([^)]*--\s*\)",
+        content,
+        re.IGNORECASE,
+    ) or re.search(r"\\item\s+" + name_escaped + r"\*?\s*\(", content, re.IGNORECASE)
+    if not entry:
+        return None
+
+    best_key, best_pos = None, -1
+    for key, section in CV_SECTIONS.items():
+        pos = content.find(section["marker"])
+        if best_pos < pos < entry.start():
+            best_key, best_pos = key, pos
+    return best_key
+
+
+def close_cv_entry(cv_path: Path, name: str, end_year: str) -> bool:
+    """Close an open CV range: (2024 -- ) -> (2024 -- 2026).
+
+    Preserves any qualifier before the years, so a graduate entry closes as
+    '(Doctoral student; 2021 -- 2026)'.
+    """
+    content = cv_path.read_text(encoding="utf-8")
+    pattern = r"(\\item\s+" + re.escape(name) + r"\*?\s*\([^)]*?--\s*)\)"
+
+    new_content, count = re.subn(
+        pattern, lambda m: f"{m.group(1)}{end_year})", content, flags=re.IGNORECASE
+    )
+    if count == 0:
+        return False
+
+    cv_path.write_text(new_content, encoding="utf-8")
+    return True
+
+
+def add_to_cv(cv_path: Path, name: str, role: str, year: str) -> bool:
+    section_key = cv_section_for_role(role)
+
+    if section_key is None:
+        print(f"  {name} is a {role}; not a trainee, so no CV entry is made")
         return True
 
-    role_lower = role.lower()
+    section = CV_SECTIONS[section_key]
+    existing = find_cv_section(cv_path, name)
 
-    if "postdoc" in role_lower:
-        section_pattern = (
-            r"(\\textit\{Postdoctoral Advisees\}:\s*\n\\begin\{etaremune\})"
-        )
-        entry = f"\\item {name} ({year} -- )"
-    elif "grad" in role_lower and "undergrad" not in role_lower:
-        section_pattern = r"(\\textit\{Graduate Advisees\}:\s*\n\\begin\{etaremune\})"
-        entry = f"\\item {name} (Doctoral student; {year} -- )"
-    else:
-        section_pattern = r"(\\textit\{Undergraduate Advisees\}:\s*\n\\blfootnote\{[^}]*\}\s*\n\\begin\{multicols\}\{2\}\s*\n\\begin\{etaremune\})"
-        entry = f"\\item {name} ({year} -- )"
+    if existing == section_key:
+        if cv_entry_is_open(cv_path, name):
+            print(f"  {name} already exists in CV with open date, skipping")
+            return True
+        print(f"  {name} exists in CV with end date, reopening...")
+        return reopen_cv_entry(cv_path, name)
 
-    match = re.search(section_pattern, content)
+    if existing is not None:
+        # A role change closes the old range and opens a new one, the way
+        # Paxton Fitzpatrick is recorded: '(2017 -- 2019)' under Undergraduate
+        # Advisees and '(Doctoral student; 2021 -- )' under Graduate Advisees.
+        if cv_entry_is_open(cv_path, name) and close_cv_entry(
+            cv_path, name, year
+        ):
+            print(
+                f"  Closed {name}'s {CV_SECTIONS[existing]['label']} entry at {year}"
+            )
+
+    content = cv_path.read_text(encoding="utf-8")
+    match = re.search(section["pattern"], content)
     if not match:
         print(f"  Warning: Could not find section for {role} in CV")
         return False
 
+    entry = section["entry"].format(name=name, year=year)
     insert_pos = match.end()
     new_content = content[:insert_pos] + f"\n  {entry}" + content[insert_pos:]
 
     cv_path.write_text(new_content, encoding="utf-8")
-    print(f"  Added {name} to CV under {role}")
+    print(f"  Added {name} to CV under {section['label']}")
     return True
 
 
@@ -1130,12 +1222,16 @@ def onboard_member(
 
     # Update lab-manual (best-effort; failure doesn't block onboarding)
     try:
-        from parse_lab_manual import add_member_to_lab_manual, commit_and_push_lab_manual
+        from parse_lab_manual import sync_member_role, commit_and_push_lab_manual
         lab_manual_tex = project_root / 'lab-manual' / 'lab_manual.tex'
         if lab_manual_tex.exists():
             print("\nUpdating lab-manual...")
-            if add_member_to_lab_manual(lab_manual_tex, name, rank, current_year):
+            outcome = sync_member_role(lab_manual_tex, name, rank, current_year)
+            if outcome == 'added':
                 print(f"  Added {name} to lab-manual under {rank}")
+            elif outcome == 'role-changed':
+                print(f"  Moved {name} to {rank}; the previous role was closed "
+                      f"out to Lab alumni at {current_year}")
             else:
                 print(f"  {name} already listed in lab-manual under {rank}, skipping")
             try:

@@ -122,13 +122,177 @@ def _parse_list_entries(content, role_category, is_active, records):
             })
 
 
+# Common role names (as passed to --rank) mapped to lab-manual headings.
+ROLE_MAP = {
+    'postdoc': 'Postdoctoral Researchers',
+    'grad student': 'Graduate Students',
+    'graduate student': 'Graduate Students',
+    'undergrad': 'Undergraduate RAs',
+    'undergraduate': 'Undergraduate RAs',
+    'lab manager': 'Lab Managers',
+    'research assistant': 'Research Assistants',
+}
+
+# The seniority order both \subsection blocks in lab_manual.tex are kept in.
+# A role block created on demand is inserted at its position here so the file
+# keeps reading the way a human maintained it.
+ROLE_ORDER = [
+    'PI',
+    'Postdoctoral Researchers',
+    'Graduate Students',
+    'Lab Managers',
+    'Research Assistants',
+    'Undergraduate RAs',
+]
+
+# A \newthought heading that is NOT commented out. '[^%\n]*' after '^' lets
+# leading whitespace through but stops at a '%', so the commented-out
+# '% \newthought{Research Assistants}' never matches.
+_HEADING_RE = re.compile(r'^[^%\n]*\\newthought\{(.*?)\}', re.MULTILINE)
+
+
+def resolve_role_heading(role):
+    """Map an onboarding --rank value to a lab-manual role heading."""
+    return ROLE_MAP.get(role.lower(), role)
+
+
+def _role_rank(heading):
+    """Sort key for ROLE_ORDER; unknown roles sort last."""
+    try:
+        return ROLE_ORDER.index(heading)
+    except ValueError:
+        return len(ROLE_ORDER)
+
+
+def _section_bounds(content, tex_path, subsection, *terminators):
+    """Return (start, end) offsets of a \\subsection block's text.
+
+    Every mutation below is restricted to one subsection. Unbounded, the
+    DOTALL patterns run straight past \\subsection{Lab alumni} and append a
+    current member to an alumni list. `terminators` are literal strings that
+    end the section; the earliest one found wins, so a section that is created
+    on demand can never be appended past the end of the chapter.
+    """
+    start = content.find(r'\subsection{' + subsection + '}')
+    if start == -1:
+        raise ValueError(f"Could not find '{subsection}' in {tex_path}")
+
+    end = len(content)
+    for terminator in terminators:
+        found = content.find(terminator, start + 1)
+        if found != -1:
+            end = min(end, found)
+    return start, end
+
+
+# Terminators for the two subsections we mutate. Alumni is the last subsection
+# in the chapter, so it ends at \end{fullwidth}.
+_CURRENT_BOUNDS = (r'\subsection{Lab alumni}', r'\end{fullwidth}')
+_ALUMNI_BOUNDS = (r'\end{fullwidth}',)
+
+
+def _find_role_block(section, role_heading):
+    """Match an uncommented '\\newthought{Role} ... \\begin{list} ... \\end{list}'.
+
+    Groups: (1) heading through \\begin{list}, (2) the items, (3) \\end{list}.
+    The heading must not be commented out -- inserting a live \\item into a
+    commented-out list produces a LaTeX "Lonely \\item" error.
+    """
+    pattern = (
+        r'(^[^%\n]*\\newthought\{' + re.escape(role_heading) + r'\}.*?'
+        r'\\begin\{list\}\{\\quad\}\{\})'
+        r'(.*?)'
+        r'(\\end\{list\})'
+    )
+    return re.search(pattern, section, re.DOTALL | re.MULTILINE)
+
+
+def _has_item(items_text, name):
+    """Is `name` already listed in this block?
+
+    Mirrors member_exists_in_cv(). The \\*? mirrors the CV's senior-thesis
+    marker so a starred entry is recognized as the same person.
+    """
+    return bool(re.search(
+        r'^[^%\n]*\\item\s+' + re.escape(name) + r'\*?\s*\(',
+        items_text, re.IGNORECASE | re.MULTILINE
+    ))
+
+
+def _insert_role_block(section, role_heading, item_line):
+    """Create a role block containing one item, at its ROLE_ORDER position.
+
+    A role block is only ever created WITH a member in it. An empty
+    '\\begin{list}{\\quad}{}\\end{list}' is a fatal LaTeX error --
+    "Something's wrong--perhaps a missing \\item" -- and produces no PDF at
+    all, which is why the Research Assistants block was commented out rather
+    than left empty.
+    """
+    block = (
+        f'\\newthought{{{role_heading}}}\n'
+        '\\begin{multicols}{2}\\raggedcolumns\n'
+        '\\begin{list}{\\quad}{}\n'
+        f'{item_line}\n'
+        '\\end{list}\n'
+        '\\end{multicols}\n\n'
+    )
+
+    rank = _role_rank(role_heading)
+    for heading in _HEADING_RE.finditer(section):
+        if _role_rank(heading.group(1).strip()) > rank:
+            # finditer starts each match at the line start, so this inserts
+            # the block immediately above the more-junior role.
+            return section[:heading.start()] + block + section[heading.start():]
+
+    # More senior than everything present: append, but stay above a trailing
+    # \newpage so the page break keeps separating Current from Alumni.
+    newpage = section.rfind('\\newpage')
+    if newpage != -1:
+        return section[:newpage] + block + section[newpage:]
+    return section.rstrip('\n') + '\n\n' + block
+
+
+def _remove_role_block(section, match):
+    """Delete a whole role block, including its \\end{multicols} wrapper."""
+    end = match.end()
+    trailer = re.match(
+        r'[^\n]*\n(?:[^\n]*\\end\{multicols\}[^\n]*\n)?\s*?\n?',
+        section[end:]
+    )
+    if trailer:
+        end += trailer.end()
+    return section[:match.start()] + section[end:]
+
+
+def find_current_role(tex_path, name):
+    """Return the role heading `name` is listed under in Current, or None."""
+    tex_path = Path(tex_path)
+    content = tex_path.read_text(encoding='utf-8')
+    start, end = _section_bounds(
+        content, tex_path, 'Current lab members', *_CURRENT_BOUNDS
+    )
+    section = content[start:end]
+
+    item = re.search(
+        r'^[^%\n]*\\item\s+' + re.escape(name) + r'\*?\s*\(',
+        section, re.IGNORECASE | re.MULTILINE
+    )
+    if not item:
+        return None
+
+    headings = [h for h in _HEADING_RE.finditer(section) if h.start() < item.start()]
+    if not headings:
+        return None
+    return headings[-1].group(1).strip()
+
+
 def add_member_to_lab_manual(tex_path, name, role, start_year):
     """Add a new member to the Current lab members section.
 
     Args:
         tex_path: Path to lab_manual.tex.
         name: Full name of the member.
-        role: Role category (e.g., 'Graduate Students', 'Undergraduate RAs').
+        role: Role category (e.g., 'grad student', 'Undergraduate RAs').
         start_year: Start year as int.
 
     Returns:
@@ -137,154 +301,137 @@ def add_member_to_lab_manual(tex_path, name, role, start_year):
     """
     tex_path = Path(tex_path)
     content = tex_path.read_text(encoding='utf-8')
-
-    # Map common role names to lab-manual role headings
-    role_map = {
-        'postdoc': 'Postdoctoral Researchers',
-        'grad student': 'Graduate Students',
-        'graduate student': 'Graduate Students',
-        'undergrad': 'Undergraduate RAs',
-        'undergraduate': 'Undergraduate RAs',
-        'lab manager': 'Lab Managers',
-        'research assistant': 'Research Assistants',
-    }
-    role_heading = role_map.get(role.lower(), role)
-
+    role_heading = resolve_role_heading(role)
     new_item = f'\\item {name} ({start_year} -- )'
 
-    # Restrict the search to the Current lab members section. Unbounded, the
-    # DOTALL patterns below run straight past \subsection{Lab alumni} and
-    # append a current member to an alumni list -- 'Lab Managers' has no
-    # heading under Current at all, so every such call landed in alumni.
-    current_start = content.find(r'\subsection{Current lab members}')
-    if current_start == -1:
-        raise ValueError(f"Could not find 'Current lab members' in {tex_path}")
-
-    alumni_start = content.find(r'\subsection{Lab alumni}', current_start)
-    if alumni_start == -1:
-        alumni_start = len(content)
+    current_start, alumni_start = _section_bounds(
+        content, tex_path, 'Current lab members', *_CURRENT_BOUNDS
+    )
     section = content[current_start:alumni_start]
 
-    # Find the role section: an uncommented \newthought{Role} followed by a
-    # list block. The heading must not be commented out -- 'Research
-    # Assistants' exists only as '% \newthought{Research Assistants}', and
-    # inserting a live \item into a commented-out list produces a LaTeX
-    # "Lonely \item" error that breaks the whole manual.
-    pattern = (
-        r'(^[^%\n]*\\newthought\{' + re.escape(role_heading) + r'\}.*?'
-        r'\\begin\{list\}\{\\quad\}\{\})'
-        r'(.*?)'
-        r'(\\end\{list\})'
-    )
-    match = re.search(pattern, section, re.DOTALL | re.MULTILINE)
+    match = _find_role_block(section, role_heading)
     if not match:
-        raise ValueError(
-            f"Could not find an active '{role_heading}' section under "
-            f"'Current lab members' in {tex_path}"
+        # No active block for this role. 'Lab Managers' has no heading under
+        # Current and 'Research Assistants' is commented out, so refusing here
+        # made those two roles impossible to onboard (issue #17). Only known
+        # roles get a block created -- otherwise a typo'd --rank would invent
+        # a new section rather than being reported.
+        if role_heading not in ROLE_ORDER:
+            raise ValueError(
+                f"Unknown role '{role}' -- expected one of "
+                f"{sorted(set(ROLE_MAP.values()))}"
+            )
+        new_section = _insert_role_block(section, role_heading, new_item)
+    else:
+        # Don't add someone already listed under this role. The spreadsheet and
+        # CV writers both check before appending; without the same guard here,
+        # re-running onboarding leaves the three sources of truth disagreeing.
+        if _has_item(match.group(2), name):
+            return False
+
+        before = match.group(1) + match.group(2).rstrip()
+        new_section = (
+            section[:match.start()] + before + '\n' + new_item + '\n'
+            + match.group(3) + section[match.end():]
         )
 
-    # Don't add someone who is already listed under this role. The spreadsheet
-    # and CV writers in onboard_member.py both check before appending; without
-    # the same guard here, re-running onboarding leaves the three sources of
-    # truth disagreeing. Name matching mirrors member_exists_in_cv().
-    # The \*? mirrors the CV's senior-thesis marker, so a starred entry is
-    # still recognized as the same person.
-    already_listed = re.search(
-        r'\\item\s+' + re.escape(name) + r'\*?\s*\(',
-        match.group(2),
-        re.IGNORECASE
-    )
-    if already_listed:
-        return False
-
-    # Insert new item before \end{list}
-    before = match.group(1) + match.group(2).rstrip()
-    new_section = (
-        section[:match.start()] + before + '\n' + new_item + '\n'
-        + match.group(3) + section[match.end():]
-    )
     content = content[:current_start] + new_section + content[alumni_start:]
     tex_path.write_text(content, encoding='utf-8')
     return True
 
 
 def move_member_to_alumni(tex_path, name, end_year):
-    """Move a member from Current to Alumni section.
+    """Move a member from Current to Alumni, closing their year range.
 
     Args:
         tex_path: Path to lab_manual.tex.
         name: Full name of the member.
         end_year: End year as int.
+
+    Returns:
+        The role heading they were moved out of.
     """
     tex_path = Path(tex_path)
     content = tex_path.read_text(encoding='utf-8')
 
-    # Find the member in Current section
-    # Match the \item line with their name
-    item_pattern = re.compile(
-        r'^(\s*)\\item\s+' + re.escape(name) + r'\s*\((\d{4})\s*--\s*\)',
-        re.MULTILINE
+    current_start, alumni_start = _section_bounds(
+        content, tex_path, 'Current lab members', *_CURRENT_BOUNDS
     )
+    section = content[current_start:alumni_start]
 
-    # Only match within Current lab members section
-    current_section_match = re.search(
-        r'\\subsection\{Current lab members\}(.*?)\\subsection\{Lab alumni\}',
-        content, re.DOTALL
+    item_match = re.search(
+        r'^[^%\n]*\\item\s+' + re.escape(name) + r'\*?\s*\((\d{4})\s*--\s*\)[^\n]*\n?',
+        section, re.IGNORECASE | re.MULTILINE
     )
-    if not current_section_match:
-        raise ValueError("Could not find Current lab members section")
-
-    current_start = current_section_match.start(1)
-    current_end = current_section_match.end(1)
-    current_text = current_section_match.group(1)
-
-    item_match = item_pattern.search(current_text)
     if not item_match:
         raise ValueError(f"Could not find '{name}' in Current lab members section")
 
-    start_year = item_match.group(2)
+    start_year = item_match.group(1)
 
-    # Determine role category by finding the \newthought before this item
-    item_pos = item_match.start()
-    role_matches = list(re.finditer(r'\\newthought\{(.*?)\}', current_text[:item_pos]))
-    if not role_matches:
+    headings = [h for h in _HEADING_RE.finditer(section) if h.start() < item_match.start()]
+    if not headings:
         raise ValueError(f"Could not determine role for '{name}'")
-    role_category = role_matches[-1].group(1)
+    role_category = headings[-1].group(1).strip()
 
-    # Remove from current section
-    abs_start = current_start + item_match.start()
-    abs_end = current_start + item_match.end()
-    # Remove the full line including newline
-    line_start = content.rfind('\n', 0, abs_start) + 1
-    line_end = content.find('\n', abs_end)
-    if line_end == -1:
-        line_end = len(content)
-    else:
-        line_end += 1  # include the newline
+    section = section[:item_match.start()] + section[item_match.end():]
 
-    content = content[:line_start] + content[line_end:]
+    # Removing the last member leaves an empty list, which is a fatal LaTeX
+    # error, so the whole block goes with it.
+    block = _find_role_block(section, role_category)
+    if block and not re.search(r'^[^%\n]*\\item', block.group(2), re.MULTILINE):
+        section = _remove_role_block(section, block)
 
-    # Add to alumni section with closed year range
-    alumni_item = f'\\item {name} ({start_year} -- {end_year})'
+    content = content[:current_start] + section + content[alumni_start:]
 
-    # Find the role section under Lab alumni
-    pattern = (
-        r'(\\subsection\{Lab alumni\}.*?'
-        r'\\newthought\{' + re.escape(role_category) + r'\}.*?'
-        r'\\begin\{list\}\{\\quad\}\{\})'
-        r'(.*?)'
-        r'(\\end\{list\})'
+    # Recompute: removing the item above shifted every offset after it.
+    alumni_start, alumni_end = _section_bounds(
+        content, tex_path, 'Lab alumni', *_ALUMNI_BOUNDS
     )
-    match = re.search(pattern, content, re.DOTALL)
-    if not match:
-        raise ValueError(
-            f"Could not find '{role_category}' alumni section in {tex_path}"
+    alumni_section = content[alumni_start:alumni_end]
+
+    alumni_item = f'\\item {name} ({start_year} -- {end_year})'
+    alumni_block = _find_role_block(alumni_section, role_category)
+    if not alumni_block:
+        new_alumni = _insert_role_block(alumni_section, role_category, alumni_item)
+    else:
+        before = alumni_block.group(1) + alumni_block.group(2).rstrip()
+        new_alumni = (
+            alumni_section[:alumni_block.start()] + before + '\n' + alumni_item
+            + '\n' + alumni_block.group(3) + alumni_section[alumni_block.end():]
         )
 
-    before = match.group(1) + match.group(2).rstrip()
-    content = content[:match.start()] + before + '\n' + alumni_item + '\n' + match.group(3) + content[match.end():]
-
+    content = content[:alumni_start] + new_alumni + content[alumni_end:]
     tex_path.write_text(content, encoding='utf-8')
+    return role_category
+
+
+def sync_member_role(tex_path, name, role, year):
+    """Record `name` under `role`, handling a role change the way the file does.
+
+    lab_manual.tex has been maintained with one convention for a decade: a role
+    change CLOSES OUT the old role into Lab alumni and opens a new entry under
+    Current. Both Xinming Xu (Research Assistants 2019 -- 2021, then Graduate
+    Students 2021 -- ) and Paxton Fitzpatrick (Lab Managers 2018 -- 2021, then
+    Graduate Students 2021 -- ) are recorded exactly that way, with the old
+    range closing in the year the new one opens.
+
+    Returns:
+        'unchanged' if they were already listed under this role,
+        'role-changed' if an older role was closed out first,
+        'added' otherwise.
+    """
+    role_heading = resolve_role_heading(role)
+    existing = find_current_role(tex_path, name)
+
+    if existing == role_heading:
+        return 'unchanged'
+
+    if existing is not None:
+        move_member_to_alumni(tex_path, name, year)
+        add_member_to_lab_manual(tex_path, name, role, year)
+        return 'role-changed'
+
+    return 'added' if add_member_to_lab_manual(tex_path, name, role, year) else 'unchanged'
 
 
 def commit_and_push_lab_manual(submodule_path, message):
