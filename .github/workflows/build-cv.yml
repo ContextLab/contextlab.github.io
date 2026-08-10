@@ -46,11 +46,15 @@ jobs:
           # emergency-stops with "File `puenc-greek.def' not found."
           sudo apt-get install -y texlive-xetex texlive-fonts-extra texlive-latex-extra texlive-lang-greek
 
-      - name: Install Dartmouth Ruzicka font
+      - name: Install fonts
         run: |
           mkdir -p ~/.fonts
-          cp data/DartmouthRuzicka-*.ttf ~/.fonts/
+          # Every font the CV needs ships in data/, so the runner renders the
+          # same glyphs a local build does.
+          cp data/*.ttf ~/.fonts/
           fc-cache -fv
+          fc-list | grep -i "Dartmouth Ruzicka" || (echo "Ruzicka not registered" && exit 1)
+          fc-list | grep -i "JetBrains Mono" || (echo "JetBrains Mono not registered" && exit 1)
 
       - name: Set up Python
         uses: actions/setup-python@v5

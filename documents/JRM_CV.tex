@@ -69,7 +69,11 @@ R. Manning's CV},pdfauthor={Jeremy R. Manning}]{hyperref} % PDF setup - set your
 % Linux Libertine Font (default)
 %\setromanfont [Ligatures={Common}, Numbers={OldStyle}, Variant=01]{Linux Libertine} % Main text font
 \setromanfont{Dartmouth Ruzicka}
-\setmonofont[Scale=0.8]{Monaco} % Set mono font (e.g. phone numbers)
+% JetBrains Mono ships in data/ (SIL OFL 1.1) and is installed by the CI
+% workflow, so this builds identically on macOS and Linux. Monaco is an Apple
+% font absent from the CI runner, where it degraded to nullfont and produced
+% a blank PDF while still reporting success.
+\setmonofont[Scale=0.8]{JetBrains Mono} % Set mono font (e.g. phone numbers)
 \sectionfont{\mdseries\upshape\Large} % Set font options for sections
 \subsectionfont{\mdseries\large} % Set font options for subsections
 \subsubsectionfont{\mdseries\normalsize} % Set font options for subsubsections
