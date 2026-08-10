@@ -433,15 +433,19 @@ def generate_undergrad_list_content(
 
     # Sort by start year descending (reverse chronological),
     # falling back to CV order for ties
+    # Key on the casefolded name: the spreadsheet and the CV do not always
+    # agree on capitalization (e.g. "Evan Mcdermid" vs "Evan McDermid"), and
+    # an exact-match miss silently drops that person to the end of their
+    # cohort instead of their CV position.
     cv_position = {}
     if cv_order:
         for i, name in enumerate(cv_order):
-            cv_position[name] = i
+            cv_position.setdefault(name.casefold(), i)
 
     def sort_key(a):
         start_year = _parse_start_year(a.get("years", ""))
         name = a.get("name", "")
-        cv_pos = cv_position.get(name, 99999)
+        cv_pos = cv_position.get(name.casefold(), 99999)
         # Negate start_year for descending; use cv_pos as tiebreaker
         return (-start_year, cv_pos)
 

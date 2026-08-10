@@ -8,6 +8,7 @@ IMPORTANT: NO MOCKS OR SIMULATIONS - all tests use real files and real operation
 import pytest
 from pathlib import Path
 import tempfile
+import contextlib
 import subprocess
 import re
 
@@ -854,3 +855,460 @@ Minimal content here
         assert '<!DOCTYPE html>' in html
         # Content appears in sections, check for section title instead
         assert 'Test Section' in html or 'Test Name' in html
+
+
+NULLFONT_TEX = r"""\documentclass{article}
+\font\monaco=Monaco at 10pt
+\begin{document}
+\monaco
+\newcommand{\pg}{Jeremy R. Manning --- Curriculum Vitae. Employment. Education.
+Publications.\par\vfill\eject}
+\pg\pg\pg\pg\pg\pg\pg\pg\pg\pg
+\end{document}
+"""
+
+
+@pytest.fixture(scope="module")
+def blank_pdf_build(tmp_path_factory):
+    """Build a REAL blank PDF via the nullfont failure mode.
+
+    Requesting a system font (Monaco) under pdflatex sends LaTeX down the
+    legacy TFM lookup path. That lookup fails, LaTeX substitutes `nullfont`,
+    and the run emits a structurally valid PDF with the right page count and
+    zero glyphs. This is the exact failure that produced a 10-page blank CV.
+    """
+    if subprocess.run(['which', 'pdflatex'], capture_output=True).returncode != 0:
+        pytest.skip("pdflatex not available")
+
+    work = tmp_path_factory.mktemp("nullfont")
+    (work / 'repro.tex').write_text(NULLFONT_TEX, encoding='utf-8')
+    subprocess.run(
+        ['pdflatex', '-interaction=nonstopmode', 'repro.tex'],
+        cwd=work, capture_output=True, timeout=120
+    )
+
+    pdf = work / 'repro.pdf'
+    log = work / 'repro.log'
+    if not pdf.exists() or not log.exists():
+        pytest.skip("could not reproduce the nullfont failure on this machine")
+
+    missfont = work / 'missfont.log'
+    return {
+        'pdf': pdf,
+        'log': log.read_text(encoding='utf-8', errors='replace'),
+        'missfont': missfont.read_text(encoding='utf-8', errors='replace')
+        if missfont.exists() else '',
+    }
+
+
+@pytest.fixture(scope="module")
+def healthy_log(tmp_path_factory):
+    """Compile the real CV with xelatex and return its log."""
+    if not TEX_FILE.exists():
+        pytest.skip("JRM_CV.tex not found")
+    if subprocess.run(['which', 'xelatex'], capture_output=True).returncode != 0:
+        pytest.skip("xelatex not available")
+
+    work = tmp_path_factory.mktemp("healthy")
+    (work / 'JRM_CV.tex').write_text(TEX_FILE.read_text(encoding='utf-8'), encoding='utf-8')
+    subprocess.run(
+        ['xelatex', '-interaction=nonstopmode', 'JRM_CV.tex'],
+        cwd=work, capture_output=True, timeout=120
+    )
+
+    log = work / 'JRM_CV.log'
+    pdf = work / 'JRM_CV.pdf'
+    if not log.exists() or not pdf.exists():
+        pytest.skip("CV did not compile in the temp directory")
+    return {'log': log.read_text(encoding='utf-8', errors='replace'), 'pdf': pdf}
+
+
+class TestPdfContentGuardrails:
+    """Guardrails from issue #15: a build that emits no glyphs must not pass."""
+
+    def test_real_cv_draws_plenty_of_text(self, healthy_log):
+        import build_cv
+        operators = build_cv.count_pdf_text_operators(healthy_log['pdf'])
+        assert operators >= build_cv.MIN_TEXT_OPERATORS
+
+    def test_blank_pdf_draws_almost_no_text(self, blank_pdf_build):
+        import build_cv
+        operators = build_cv.count_pdf_text_operators(blank_pdf_build['pdf'])
+        assert operators < build_cv.MIN_TEXT_OPERATORS
+
+    def test_page_count_parsed_from_real_log(self, healthy_log):
+        import build_cv
+        pages = build_cv.parse_page_count(healthy_log['log'])
+        assert pages is not None and pages >= build_cv.MIN_PDF_PAGES
+
+    def test_page_count_alone_would_not_catch_the_blank_pdf(self, blank_pdf_build):
+        """The blank PDF has a plausible page count, which is why it slipped through."""
+        import build_cv
+        pages = build_cv.parse_page_count(blank_pdf_build['log'])
+        assert pages is not None and pages > 1
+
+    def test_healthy_log_reports_no_font_failures(self, healthy_log):
+        """A good build must stay clean, despite benign 'not found' log lines."""
+        import build_cv
+        assert build_cv.find_font_failures(healthy_log['log'], '') == []
+
+    def test_healthy_log_contains_benign_not_found(self, healthy_log):
+        """Documents why the font check can't just grep for 'not found'."""
+        assert 'not found' in healthy_log['log']
+
+    def test_nullfont_log_reports_font_failures(self, blank_pdf_build):
+        import build_cv
+        problems = build_cv.find_font_failures(
+            blank_pdf_build['log'], blank_pdf_build['missfont']
+        )
+        assert problems, "nullfont substitution was not detected"
+        assert any('nullfont' in p for p in problems)
+
+    def test_validate_output_rejects_blank_pdf(self, blank_pdf_build):
+        import build_cv
+        original = build_cv.PDF_FILE
+        try:
+            build_cv.PDF_FILE = blank_pdf_build['pdf']
+            assert build_cv.validate_output({
+                'log': blank_pdf_build['log'],
+                'missfont': blank_pdf_build['missfont'],
+            }) is False
+        finally:
+            build_cv.PDF_FILE = original
+
+    def test_validate_output_accepts_the_real_build(self, healthy_log):
+        import build_cv
+        if not HTML_FILE.exists():
+            pytest.skip("JRM_CV.html not found")
+        original = build_cv.PDF_FILE
+        try:
+            build_cv.PDF_FILE = healthy_log['pdf']
+            assert build_cv.validate_output({'log': healthy_log['log'], 'missfont': ''}) is True
+        finally:
+            build_cv.PDF_FILE = original
+
+    def test_missfont_file_alone_is_a_failure(self):
+        import build_cv
+        problems = build_cv.find_font_failures('', 'Monaco\n')
+        assert any('missfont' in p for p in problems)
+
+    def test_empty_missfont_is_not_a_failure(self):
+        import build_cv
+        assert build_cv.find_font_failures('', '   \n') == []
+
+
+@contextlib.contextmanager
+def documents_dir_at(path):
+    """Point build_cv's module-level paths at a scratch directory."""
+    import build_cv
+
+    saved = {
+        name: getattr(build_cv, name)
+        for name in ('DOCUMENTS_DIR', 'TEX_FILE', 'PDF_FILE', 'HTML_FILE',
+                     'LOG_FILE', 'MISSFONT_FILE')
+    }
+    build_cv.DOCUMENTS_DIR = path
+    build_cv.TEX_FILE = path / 'JRM_CV.tex'
+    build_cv.PDF_FILE = path / 'JRM_CV.pdf'
+    build_cv.HTML_FILE = path / 'JRM_CV.html'
+    build_cv.LOG_FILE = path / 'JRM_CV.log'
+    build_cv.MISSFONT_FILE = path / 'missfont.log'
+    try:
+        yield build_cv
+    finally:
+        for name, value in saved.items():
+            setattr(build_cv, name, value)
+
+
+@contextlib.contextmanager
+def threshold(name, value):
+    """Temporarily move one guardrail threshold."""
+    import build_cv
+
+    saved = getattr(build_cv, name)
+    setattr(build_cv, name, value)
+    try:
+        yield build_cv
+    finally:
+        setattr(build_cv, name, saved)
+
+
+MINIMAL_TEX = r"""\documentclass{article}
+\begin{document}
+Hello.
+\end{document}
+"""
+
+BROKEN_TEX = r"""\documentclass{article}
+\begin{document}
+\thisCommandDoesNotExist
+\end{document}
+"""
+
+
+def _require_xelatex():
+    if subprocess.run(['which', 'xelatex'], capture_output=True).returncode != 0:
+        pytest.skip("xelatex not available")
+
+
+class TestCompileFailurePropagation:
+    """A failed compile must never be reported as a successful build."""
+
+    def test_nonzero_exit_fails_even_when_a_pdf_exists(self, tmp_path):
+        """The regression that let a stale PDF pass as a fresh build."""
+        _require_xelatex()
+        (tmp_path / 'JRM_CV.tex').write_text(BROKEN_TEX, encoding='utf-8')
+
+        stale = tmp_path / 'JRM_CV.pdf'
+        stale.write_bytes(b'%PDF-1.5\nleftover from an earlier build\n%%EOF\n')
+
+        with documents_dir_at(tmp_path) as build_cv:
+            compiled, diagnostics = build_cv.compile_pdf()
+
+        assert compiled is False, "nonzero xelatex exit was treated as success"
+        assert stale.exists(), "the stale PDF should be left alone, not deleted"
+
+    def test_build_cv_fails_when_compilation_fails(self, tmp_path):
+        _require_xelatex()
+        (tmp_path / 'JRM_CV.tex').write_text(BROKEN_TEX, encoding='utf-8')
+        (tmp_path / 'JRM_CV.pdf').write_bytes(b'%PDF-1.5\nstale\n%%EOF\n')
+
+        with documents_dir_at(tmp_path) as build_cv:
+            assert build_cv.build_cv() is False
+
+    def test_unrewritten_pdf_is_rejected_as_stale(self, tmp_path):
+        """A compile that succeeds without touching the PDF must not pass."""
+        _require_xelatex()
+
+        # Compile a document whose output is NOT the PDF build_cv watches,
+        # so the file on disk survives the run untouched.
+        (tmp_path / 'other.tex').write_text(MINIMAL_TEX, encoding='utf-8')
+        watched = tmp_path / 'JRM_CV.pdf'
+        watched.write_bytes(b'%PDF-1.5\nstale but present\n%%EOF\n')
+        before = watched.stat().st_mtime_ns
+
+        with documents_dir_at(tmp_path) as build_cv:
+            build_cv.TEX_FILE = tmp_path / 'other.tex'
+            compiled, _ = build_cv.compile_pdf()
+
+        assert watched.stat().st_mtime_ns == before, "test setup: PDF was rewritten"
+        assert compiled is False, "an untouched PDF was accepted as a fresh build"
+
+    def test_stale_missfont_does_not_fail_a_good_build(self, tmp_path):
+        """A leftover missfont.log must not condemn an otherwise clean build."""
+        _require_xelatex()
+        (tmp_path / 'JRM_CV.tex').write_text(MINIMAL_TEX, encoding='utf-8')
+        (tmp_path / 'missfont.log').write_text('Monaco\n', encoding='utf-8')
+
+        with documents_dir_at(tmp_path) as build_cv:
+            compiled, diagnostics = build_cv.compile_pdf()
+
+        assert compiled is True
+        assert diagnostics['missfont'] == '', "stale missfont.log leaked into diagnostics"
+        assert build_cv.find_font_failures(diagnostics['log'], diagnostics['missfont']) == []
+
+
+class TestValidationThresholdsAreEnforced:
+    """Each floor must actually be consulted, not merely defined."""
+
+    def test_size_floor_is_consulted(self, healthy_log):
+        import build_cv
+
+        original = build_cv.PDF_FILE
+        real_size = healthy_log['pdf'].stat().st_size
+        try:
+            build_cv.PDF_FILE = healthy_log['pdf']
+            with threshold('MIN_PDF_BYTES', real_size + 1):
+                assert build_cv.validate_output({'log': healthy_log['log']}) is False
+        finally:
+            build_cv.PDF_FILE = original
+
+    def test_page_floor_is_consulted(self, healthy_log):
+        import build_cv
+
+        original = build_cv.PDF_FILE
+        real_pages = build_cv.count_pdf_pages(healthy_log['pdf'])
+        try:
+            build_cv.PDF_FILE = healthy_log['pdf']
+            with threshold('MIN_PDF_PAGES', real_pages + 1):
+                assert build_cv.validate_output({'log': healthy_log['log']}) is False
+        finally:
+            build_cv.PDF_FILE = original
+
+    def test_operator_floor_is_consulted(self, healthy_log):
+        import build_cv
+
+        original = build_cv.PDF_FILE
+        real_ops = build_cv.count_pdf_text_operators(healthy_log['pdf'])
+        try:
+            build_cv.PDF_FILE = healthy_log['pdf']
+            with threshold('MIN_TEXT_OPERATORS', real_ops + 1):
+                assert build_cv.validate_output({'log': healthy_log['log']}) is False
+        finally:
+            build_cv.PDF_FILE = original
+
+
+class TestTruncatedPdf:
+    """A cut-off PDF keeps its content streams, so text alone can't catch it."""
+
+    def test_truncated_pdf_has_no_trailer(self, healthy_log, tmp_path):
+        import build_cv
+
+        truncated = tmp_path / 'truncated.pdf'
+        truncated.write_bytes(healthy_log['pdf'].read_bytes()[:60_000])
+
+        assert build_cv.has_valid_pdf_trailer(healthy_log['pdf']) is True
+        assert build_cv.has_valid_pdf_trailer(truncated) is False
+
+    def test_truncated_pdf_keeps_its_text_operators(self, healthy_log, tmp_path):
+        """Documents why the trailer and page checks are needed at all."""
+        import build_cv
+
+        truncated = tmp_path / 'truncated.pdf'
+        truncated.write_bytes(healthy_log['pdf'].read_bytes()[:60_000])
+
+        assert build_cv.count_pdf_text_operators(truncated) >= build_cv.MIN_TEXT_OPERATORS
+
+    def test_validate_output_rejects_truncated_pdf(self, healthy_log, tmp_path):
+        import build_cv
+
+        truncated = tmp_path / 'truncated.pdf'
+        truncated.write_bytes(healthy_log['pdf'].read_bytes()[:60_000])
+
+        original = build_cv.PDF_FILE
+        try:
+            build_cv.PDF_FILE = truncated
+            assert build_cv.validate_output({'log': healthy_log['log']}) is False
+        finally:
+            build_cv.PDF_FILE = original
+
+
+class TestPdfLogCrossCheck:
+    """The PDF and the log must describe the same document."""
+
+    def test_page_count_read_from_pdf_matches_the_log(self, healthy_log):
+        import build_cv
+
+        assert build_cv.count_pdf_pages(healthy_log['pdf']) == build_cv.parse_page_count(
+            healthy_log['log']
+        )
+
+    def test_disagreeing_log_and_pdf_are_rejected(self, healthy_log):
+        """A log from a different run than the PDF on disk means it's stale."""
+        import build_cv
+
+        mismatched = healthy_log['log'].replace(
+            'Output written on JRM_CV.pdf (14 pages',
+            'Output written on JRM_CV.pdf (99 pages',
+        )
+        if mismatched == healthy_log['log']:
+            pytest.skip("log format changed; page-count line not found")
+
+        original = build_cv.PDF_FILE
+        try:
+            build_cv.PDF_FILE = healthy_log['pdf']
+            assert build_cv.validate_output({'log': mismatched}) is False
+        finally:
+            build_cv.PDF_FILE = original
+
+
+# Errors on the second page, so xelatex exits nonzero but still writes a PDF.
+# That combination isolates the exit-status check from the stale-PDF check.
+PARTIAL_TEX = r"""\documentclass{article}
+\begin{document}
+Page one has real content here.
+\clearpage
+\thisCommandDoesNotExist
+Second page.
+\end{document}
+"""
+
+
+class TestGuardsInIsolation:
+    """Each guard must work on its own, not only via defense in depth.
+
+    Every check below is verified with the OTHER checks neutralized, so that
+    a regression in one is not masked by another catching the same artifact.
+    """
+
+    def test_nonzero_exit_fails_even_when_the_pdf_is_rewritten(self, tmp_path):
+        """Isolates the exit-status check from the stale-PDF check."""
+        _require_xelatex()
+        (tmp_path / 'JRM_CV.tex').write_text(PARTIAL_TEX, encoding='utf-8')
+
+        with documents_dir_at(tmp_path) as build_cv:
+            compiled, _ = build_cv.compile_pdf()
+            rewritten = build_cv.PDF_FILE.exists()
+
+        assert rewritten, "test setup: expected a partial PDF to be written"
+        assert compiled is False, "nonzero exit passed because a PDF was produced"
+
+    def test_trailer_check_alone_rejects_truncation(self, healthy_log, tmp_path):
+        """Isolates the trailer check by zeroing every other floor."""
+        import build_cv
+
+        truncated = tmp_path / 'truncated.pdf'
+        truncated.write_bytes(healthy_log['pdf'].read_bytes()[:60_000])
+
+        original = build_cv.PDF_FILE
+        try:
+            build_cv.PDF_FILE = truncated
+            with threshold('MIN_PDF_BYTES', 0), threshold('MIN_PDF_PAGES', 0), \
+                    threshold('MIN_TEXT_OPERATORS', 0):
+                assert build_cv.validate_output({}) is False
+        finally:
+            build_cv.PDF_FILE = original
+
+    def test_font_check_alone_rejects_the_blank_pdf(self, blank_pdf_build):
+        """Isolates the log-based font check by zeroing every floor."""
+        import build_cv
+
+        original = build_cv.PDF_FILE
+        try:
+            build_cv.PDF_FILE = blank_pdf_build['pdf']
+            with threshold('MIN_PDF_BYTES', 0), threshold('MIN_PDF_PAGES', 0), \
+                    threshold('MIN_TEXT_OPERATORS', 0):
+                assert build_cv.validate_output({
+                    'log': blank_pdf_build['log'],
+                    'missfont': blank_pdf_build['missfont'],
+                }) is False
+        finally:
+            build_cv.PDF_FILE = original
+
+    def test_operator_floor_alone_rejects_the_blank_pdf(self, blank_pdf_build):
+        """Isolates the text-operator floor: no log, no size or page floor."""
+        import build_cv
+
+        original = build_cv.PDF_FILE
+        try:
+            build_cv.PDF_FILE = blank_pdf_build['pdf']
+            with threshold('MIN_PDF_BYTES', 0), threshold('MIN_PDF_PAGES', 0):
+                assert build_cv.validate_output({}) is False
+        finally:
+            build_cv.PDF_FILE = original
+
+
+class TestThresholdValues:
+    """Pin the floors so they cannot be quietly weakened back to uselessness."""
+
+    def test_page_floor_is_above_the_degraded_page_count(self):
+        """The nullfont CV was 10 pages, so a floor at or below 10 is inert."""
+        import build_cv
+        assert build_cv.MIN_PDF_PAGES > 10
+
+    def test_size_floor_is_above_a_severely_short_cv(self):
+        """Embedded fonts mean even a 4-page CV weighs ~75,000 bytes."""
+        import build_cv
+        assert build_cv.MIN_PDF_BYTES > 75_000
+
+    def test_operator_floor_is_well_above_a_blank_document(self):
+        import build_cv
+        assert build_cv.MIN_TEXT_OPERATORS >= 500
+
+    def test_real_cv_clears_every_floor(self, healthy_log):
+        """The thresholds must not be so tight that a good build fails."""
+        import build_cv
+        assert healthy_log['pdf'].stat().st_size >= build_cv.MIN_PDF_BYTES
+        assert build_cv.count_pdf_pages(healthy_log['pdf']) >= build_cv.MIN_PDF_PAGES
+        assert (build_cv.count_pdf_text_operators(healthy_log['pdf'])
+                >= build_cv.MIN_TEXT_OPERATORS)

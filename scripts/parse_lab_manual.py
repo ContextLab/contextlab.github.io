@@ -130,6 +130,10 @@ def add_member_to_lab_manual(tex_path, name, role, start_year):
         name: Full name of the member.
         role: Role category (e.g., 'Graduate Students', 'Undergraduate RAs').
         start_year: Start year as int.
+
+    Returns:
+        True if the member was added, False if they were already listed under
+        that role (in which case the file is left untouched).
     """
     tex_path = Path(tex_path)
     content = tex_path.read_text(encoding='utf-8')
@@ -148,26 +152,60 @@ def add_member_to_lab_manual(tex_path, name, role, start_year):
 
     new_item = f'\\item {name} ({start_year} -- )'
 
-    # Find the role section under Current lab members
-    # Look for \newthought{Role} followed by a list block
+    # Restrict the search to the Current lab members section. Unbounded, the
+    # DOTALL patterns below run straight past \subsection{Lab alumni} and
+    # append a current member to an alumni list -- 'Lab Managers' has no
+    # heading under Current at all, so every such call landed in alumni.
+    current_start = content.find(r'\subsection{Current lab members}')
+    if current_start == -1:
+        raise ValueError(f"Could not find 'Current lab members' in {tex_path}")
+
+    alumni_start = content.find(r'\subsection{Lab alumni}', current_start)
+    if alumni_start == -1:
+        alumni_start = len(content)
+    section = content[current_start:alumni_start]
+
+    # Find the role section: an uncommented \newthought{Role} followed by a
+    # list block. The heading must not be commented out -- 'Research
+    # Assistants' exists only as '% \newthought{Research Assistants}', and
+    # inserting a live \item into a commented-out list produces a LaTeX
+    # "Lonely \item" error that breaks the whole manual.
     pattern = (
-        r'(\\subsection\{Current lab members\}.*?'
-        r'\\newthought\{' + re.escape(role_heading) + r'\}.*?'
+        r'(^[^%\n]*\\newthought\{' + re.escape(role_heading) + r'\}.*?'
         r'\\begin\{list\}\{\\quad\}\{\})'
         r'(.*?)'
         r'(\\end\{list\})'
     )
-    match = re.search(pattern, content, re.DOTALL)
+    match = re.search(pattern, section, re.DOTALL | re.MULTILINE)
     if not match:
         raise ValueError(
-            f"Could not find '{role_heading}' section under "
+            f"Could not find an active '{role_heading}' section under "
             f"'Current lab members' in {tex_path}"
         )
 
+    # Don't add someone who is already listed under this role. The spreadsheet
+    # and CV writers in onboard_member.py both check before appending; without
+    # the same guard here, re-running onboarding leaves the three sources of
+    # truth disagreeing. Name matching mirrors member_exists_in_cv().
+    # The \*? mirrors the CV's senior-thesis marker, so a starred entry is
+    # still recognized as the same person.
+    already_listed = re.search(
+        r'\\item\s+' + re.escape(name) + r'\*?\s*\(',
+        match.group(2),
+        re.IGNORECASE
+    )
+    if already_listed:
+        return False
+
     # Insert new item before \end{list}
     before = match.group(1) + match.group(2).rstrip()
-    new_content = content[:match.start()] + before + '\n' + new_item + '\n' + match.group(3) + content[match.end():]
-    tex_path.write_text(new_content, encoding='utf-8')
+    new_section = (
+        section[:match.start()] + before + '\n' + new_item + '\n'
+        + match.group(3) + section[match.end():]
+    )
+    content = content[:current_start] + new_section + content[alumni_start:]
+    tex_path.write_text(content, encoding='utf-8')
+    return True
 
 
 def move_member_to_alumni(tex_path, name, end_year):

@@ -26,6 +26,7 @@ Usage:
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -999,8 +1000,16 @@ def add_to_cv(cv_path: Path, name: str, role: str, year: str) -> bool:
     return True
 
 
-def rebuild_pages(project_root: Path) -> None:
+def rebuild_pages(project_root: Path) -> bool:
+    """Rebuild people.html and the CV.
+
+    Returns:
+        True only if every rebuild actually succeeded. Failures are reported
+        as errors rather than notes, so the operator is never told a build
+        happened when it did not.
+    """
     scripts_dir = project_root / "scripts"
+    succeeded = True
 
     print("\nRebuilding people.html...")
     result = subprocess.run(
@@ -1012,16 +1021,29 @@ def rebuild_pages(project_root: Path) -> None:
     if result.returncode == 0:
         print("  people.html rebuilt successfully")
     else:
-        print(f"  Warning: build_people.py failed: {result.stderr}")
+        print(f"  ERROR: build_people.py failed:\n{result.stderr.strip()}")
+        succeeded = False
 
     print("\nRebuilding CV...")
-    result = subprocess.run(
-        [sys.executable, "build_cv.py"], cwd=scripts_dir, capture_output=True, text=True
-    )
-    if result.returncode == 0:
-        print("  CV rebuilt successfully")
+    if shutil.which("xelatex") is None:
+        print("  ERROR: xelatex not found, so the CV was NOT rebuilt.")
+        print("  JRM_CV.pdf still reflects the previous state.")
+        print("  Install a LaTeX distribution, then run: cd scripts && python build_cv.py")
+        succeeded = False
     else:
-        print(f"  Note: CV rebuild requires LaTeX. Run manually if needed.")
+        result = subprocess.run(
+            [sys.executable, "build_cv.py"], cwd=scripts_dir, capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            print("  CV rebuilt successfully")
+        else:
+            print("  ERROR: CV build failed. JRM_CV.pdf does NOT include this member.")
+            details = (result.stdout or result.stderr).strip()
+            for line in details.splitlines()[-15:]:
+                print(f"    {line}")
+            succeeded = False
+
+    return succeeded
 
 
 def onboard_member(
@@ -1102,7 +1124,9 @@ def onboard_member(
     )
 
     print("\nUpdating CV...")
-    add_to_cv(cv_path, name, rank, current_year)
+    cv_updated = add_to_cv(cv_path, name, rank, current_year)
+    if not cv_updated:
+        print(f"  ERROR: {name} was NOT added to {cv_path.name}")
 
     # Update lab-manual (best-effort; failure doesn't block onboarding)
     try:
@@ -1110,7 +1134,10 @@ def onboard_member(
         lab_manual_tex = project_root / 'lab-manual' / 'lab_manual.tex'
         if lab_manual_tex.exists():
             print("\nUpdating lab-manual...")
-            add_member_to_lab_manual(lab_manual_tex, name, rank, current_year)
+            if add_member_to_lab_manual(lab_manual_tex, name, rank, current_year):
+                print(f"  Added {name} to lab-manual under {rank}")
+            else:
+                print(f"  {name} already listed in lab-manual under {rank}, skipping")
             try:
                 commit_and_push_lab_manual(
                     project_root / 'lab-manual',
@@ -1130,10 +1157,17 @@ def onboard_member(
     if gmail:
         share_google_calendars(gmail, rank)
 
-    if not skip_rebuild:
-        rebuild_pages(project_root)
+    rebuilt = rebuild_pages(project_root) if not skip_rebuild else True
 
     action = "reactivated" if is_reactivation else "onboarded"
+    if not (cv_updated and rebuilt):
+        print(f"\n{name} was {action}, but some steps FAILED -- see the errors above.")
+        if not cv_updated:
+            print("  - the CV does not list this member")
+        if not rebuilt:
+            print("  - the generated pages are out of date")
+        return False
+
     print(f"\nSuccessfully {action} {name}!")
     return True
 

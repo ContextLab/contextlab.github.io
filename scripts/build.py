@@ -19,6 +19,7 @@ def main():
 
     data_dir = project_root / 'data'
     templates_dir = project_root / 'templates'
+    documents_dir = project_root / 'documents'
 
     # Track build results
     results = []
@@ -36,10 +37,23 @@ def main():
 
     # Build people.html
     try:
+        # Pass the CV so undergrad alumni get the CV's ordering. Without it
+        # build_people() falls back to a different order than build_people.py
+        # produces, and people.html thrashes between the two entry points.
+        cv_path = documents_dir / 'JRM_CV.tex'
+        if not cv_path.exists():
+            # Refuse rather than silently emitting the wrong order: a missing
+            # CV makes parse_cv_undergrad_order return an empty list, which
+            # looks like a successful build.
+            raise FileNotFoundError(
+                f"{cv_path} is required for undergrad alumni ordering"
+            )
+
         build_people(
             data_dir / 'people.xlsx',
             templates_dir / 'people.html',
-            project_root / 'people.html'
+            project_root / 'people.html',
+            cv_path
         )
         results.append(('people.html', 'OK'))
     except Exception as e:

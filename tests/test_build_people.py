@@ -457,3 +457,147 @@ class TestIntegration:
             assert len(content) > 5000  # Should be a substantial page
             assert "person-card" in content
             assert "lab-director" in content
+
+
+class TestEntryPointConsistency:
+    """Both build.py and build_people.py must produce the same people.html.
+
+    Regression tests for the ordering thrash described in issue #16: build.py
+    used to call build_people() without a cv_path, which dropped the CV-derived
+    ordering of undergrad alumni and made the two entry points fight over the
+    file, producing a 152-line diff every time the other one ran.
+    """
+
+    def test_committed_people_html_is_the_cv_ordered_build(self):
+        """The committed people.html must match a build that uses the CV order."""
+        project_root = Path(__file__).parent.parent
+        data_path = project_root / "data" / "people.xlsx"
+        template_path = project_root / "templates" / "people.html"
+        cv_path = project_root / "documents" / "JRM_CV.tex"
+        committed = project_root / "people.html"
+
+        for required in (data_path, template_path, cv_path, committed):
+            if not required.exists():
+                pytest.skip(f"{required.name} not found")
+
+        with tempfile.TemporaryDirectory() as td:
+            output_path = Path(td) / "people.html"
+            build_people(data_path, template_path, output_path, cv_path)
+
+            assert output_path.read_text(encoding="utf-8") == committed.read_text(
+                encoding="utf-8"
+            ), "committed people.html does not match the CV-ordered build"
+
+    def test_cv_ordering_actually_changes_the_output(self):
+        """Guard the guard: if these matched, the test above would prove nothing."""
+        project_root = Path(__file__).parent.parent
+        data_path = project_root / "data" / "people.xlsx"
+        template_path = project_root / "templates" / "people.html"
+        cv_path = project_root / "documents" / "JRM_CV.tex"
+
+        for required in (data_path, template_path, cv_path):
+            if not required.exists():
+                pytest.skip(f"{required.name} not found")
+
+        with tempfile.TemporaryDirectory() as td:
+            with_cv = Path(td) / "with_cv.html"
+            without_cv = Path(td) / "without_cv.html"
+            build_people(data_path, template_path, with_cv, cv_path)
+            build_people(data_path, template_path, without_cv)
+
+            assert with_cv.read_text(encoding="utf-8") != without_cv.read_text(
+                encoding="utf-8"
+            ), "cv_path no longer affects ordering; this test needs rethinking"
+
+    def test_build_py_leaves_people_html_unchanged(self):
+        """Running build.py must not rewrite the committed people.html."""
+        import subprocess
+
+        project_root = Path(__file__).parent.parent
+        scripts_dir = project_root / "scripts"
+        committed = project_root / "people.html"
+
+        if not committed.exists():
+            pytest.skip("people.html not found")
+
+        before = committed.read_bytes()
+        result = subprocess.run(
+            [sys.executable, "build.py"],
+            cwd=scripts_dir,
+            capture_output=True,
+            text=True,
+        )
+        after = committed.read_bytes()
+
+        # Restore before asserting so a failure can't leave the tree dirty
+        if after != before:
+            committed.write_bytes(before)
+
+        assert result.returncode == 0, f"build.py failed: {result.stderr}"
+        assert after == before, "build.py rewrote people.html (ordering thrash is back)"
+
+    def test_build_people_py_leaves_people_html_unchanged(self):
+        """The symmetric check, and the one that has teeth in CI.
+
+        build-content.yml runs build.py *before* pytest, so a test comparing
+        build.py's output to the file on disk is tautological there. Running
+        the OTHER entry point afterwards is not: it fails if build_people.py
+        would write something different from what build.py just wrote.
+        """
+        import subprocess
+
+        project_root = Path(__file__).parent.parent
+        scripts_dir = project_root / "scripts"
+        committed = project_root / "people.html"
+
+        if not committed.exists():
+            pytest.skip("people.html not found")
+
+        before = committed.read_bytes()
+        result = subprocess.run(
+            [sys.executable, "build_people.py"],
+            cwd=scripts_dir,
+            capture_output=True,
+            text=True,
+        )
+        after = committed.read_bytes()
+
+        if after != before:
+            committed.write_bytes(before)
+
+        assert result.returncode == 0, f"build_people.py failed: {result.stderr}"
+        assert after == before, "build_people.py disagrees with build.py"
+
+
+class TestCvOrderingRobustness:
+    """Ordering must not depend on capitalization agreeing across sources."""
+
+    def test_cv_position_lookup_ignores_case(self):
+        """data/people.xlsx spells one alumnus differently from the CV."""
+        project_root = Path(__file__).parent.parent
+        data_path = project_root / "data" / "people.xlsx"
+        cv_path = project_root / "documents" / "JRM_CV.tex"
+
+        for required in (data_path, cv_path):
+            if not required.exists():
+                pytest.skip(f"{required.name} not found")
+
+        from build_people import parse_cv_undergrad_order
+
+        cv_names = {n.casefold() for n in parse_cv_undergrad_order(cv_path)}
+        sheet_names = [p["name"] for p in load_people(data_path)["alumni_undergrads"]]
+
+        unmatched = [n for n in sheet_names if n.casefold() not in cv_names]
+        assert not unmatched, f"undergrad alumni missing from the CV: {unmatched}"
+
+    def test_case_mismatch_still_lands_in_cv_position(self):
+        """A name that differs only in case must not sort to the end."""
+        from build_people import generate_undergrad_list_content
+
+        alumni = [
+            {"name": "Zoe Zebra", "years": "2020 - 2021"},
+            {"name": "Evan Mcdermid", "years": "2020 - 2021"},
+        ]
+        html = generate_undergrad_list_content(alumni, ["Evan McDermid", "Zoe Zebra"])
+
+        assert html.index("Evan Mcdermid") < html.index("Zoe Zebra")

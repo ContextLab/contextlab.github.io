@@ -21,6 +21,13 @@ on:
       - '.github/workflows/build-cv.yml'
   workflow_dispatch:  # Allow manual triggering
 
+# Both build workflows commit and push to main, and a push touching
+# documents/JRM_CV.tex starts both at once. Serialize them so the second
+# one cannot be rejected as non-fast-forward.
+concurrency:
+  group: main-autocommit
+  cancel-in-progress: false
+
 jobs:
   build-cv:
     runs-on: ubuntu-latest
@@ -75,4 +82,5 @@ jobs:
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add documents/JRM_CV.pdf documents/JRM_CV.html
           git diff --staged --quiet || git commit -m "Auto-build: Update CV PDF and HTML from LaTeX source"
+          git pull --rebase
           git push
