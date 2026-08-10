@@ -41,7 +41,10 @@ jobs:
       - name: Install TeX Live
         run: |
           sudo apt-get update
-          sudo apt-get install -y texlive-xetex texlive-fonts-extra texlive-latex-extra
+          # texlive-lang-greek provides greek-fontenc's puenc-greek.def, which
+          # hyperref's puenc.def \inputs unconditionally. Without it xelatex
+          # emergency-stops with "File `puenc-greek.def' not found."
+          sudo apt-get install -y texlive-xetex texlive-fonts-extra texlive-latex-extra texlive-lang-greek
 
       - name: Install Dartmouth Ruzicka font
         run: |
