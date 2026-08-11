@@ -35,7 +35,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests
+        run: pip install -r requirements-build.txt
 
       - name: List the models this account can reach
         env:
@@ -43,29 +43,30 @@ jobs:
           # substituted into the source before it runs.
           DARTMOUTH_CHAT_API_KEY: ${{ secrets.DARTMOUTH_CHAT_API_KEY }}
         run: |
+          cd scripts && python dartmouth_chat.py --models
+
+      - name: Run the client and bio tests against the live service
+        env:
+          DARTMOUTH_CHAT_API_KEY: ${{ secrets.DARTMOUTH_CHAT_API_KEY }}
+        run: |
+          pytest tests/test_dartmouth_chat.py -v -rs --junitxml=llm-results.xml
+
+      - name: Fail if the live tests skipped instead of running
+        if: always()
+        run: |
+          # Without the key every network test skips and the job still passes,
+          # which would leave the API silently unverified.
           python - <<'PY'
-          import json, os, sys
-          import requests
+          import sys
+          import xml.etree.ElementTree as ET
 
-          key = os.environ.get("DARTMOUTH_CHAT_API_KEY")
-          if not key:
-              sys.exit("::error::DARTMOUTH_CHAT_API_KEY is not set")
-          print(f"key present, {len(key)} chars")
-
-          base = "https://chat.dartmouth.edu"
-          headers = {"Authorization": f"Bearer {key}"}
-
-          for path in ("/api/models", "/openai/v1/models"):
-              r = requests.get(base + path, headers=headers, timeout=60)
-              print(f"\n=== GET {path} -> {r.status_code} ===")
-              if r.status_code != 200:
-                  print("  ", r.text[:300])
-                  continue
-              data = r.json().get("data", [])
-              print(f"  {len(data)} models")
-              ids = sorted(m.get("id", "?") for m in data)
-              for i in ids:
-                  print("   ", i)
-              qwen = [i for i in ids if "qwen" in i.lower()]
-              print(f"\n  QWEN MODELS: {qwen}")
+          suite = ET.parse("llm-results.xml").getroot().find("testsuite")
+          total = int(suite.get("tests", 0))
+          skipped = int(suite.get("skipped", 0))
+          print(f"{total} collected, {skipped} skipped")
+          if total == 0:
+              sys.exit("::error::No tests ran.")
+          if skipped:
+              sys.exit(f"::error::{skipped} skipped -- the key did not reach pytest.")
+          print("The live service was really exercised.")
           PY

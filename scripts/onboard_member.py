@@ -393,191 +393,80 @@ def share_google_calendars(email: str, rank: str) -> bool:
     return success
 
 
-LLM_VENV_DIR = Path.home() / ".cache" / "cdl" / "llm-venv"
+# Bios are rewritten by Dartmouth's own LLM service. See dartmouth_chat.py.
+#
+# This replaces a local mlx-lm setup that downloaded an 18GB Qwen2.5-32B into
+# ~/.cache/cdl/llm-venv and ran it on device. mlx-lm is Apple-Silicon only, so
+# that path could never work for the lab's Windows and Linux members -- the
+# same people issue #14 was about. The hosted service costs the lab nothing,
+# needs no download, and answers in about a second.
+from dartmouth_chat import DartmouthChatError, chat as dartmouth_chat
 
 
-def get_llm_venv_python() -> Optional[Path]:
-    """Get the Python executable from the LLM virtual environment."""
-    if sys.platform == "win32":
-        python_path = LLM_VENV_DIR / "Scripts" / "python.exe"
-    else:
-        python_path = LLM_VENV_DIR / "bin" / "python"
-    return python_path if python_path.exists() else None
+def _clean_bio(text: str) -> str:
+    """Strip the wrapping a chat model puts around a one-line answer."""
+    text = text.strip().strip('"').strip()
 
+    # "Here is the bio:" / "Sure! Here's..." -- drop a preamble line and keep
+    # what follows, rather than storing the chatter as the bio.
+    lowered = text.lower()
+    if lowered.startswith(("here", "sure", "certainly", "of course")):
+        _, sep, rest = text.partition("\n")
+        text = rest.strip() if sep and rest.strip() else ""
+        if not text:
+            return ""
+        text = text.strip('"').strip()
 
-def setup_llm_venv() -> Optional[Path]:
-    """Create isolated venv for LLM to avoid dependency conflicts."""
-    if get_llm_venv_python():
-        return get_llm_venv_python()
-
-    print("  Creating isolated LLM environment (one-time setup)...")
-    LLM_VENV_DIR.parent.mkdir(parents=True, exist_ok=True)
-
-    try:
-        subprocess.check_call(
-            [sys.executable, "-m", "venv", str(LLM_VENV_DIR)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"  Warning: Could not create venv: {e}")
-        return None
-
-    venv_python = get_llm_venv_python()
-    if not venv_python:
-        print("  Warning: venv created but Python not found")
-        return None
-
-    print("  Installing LLM dependencies (this may take a few minutes)...")
-    try:
-        subprocess.check_call(
-            [str(venv_python), "-m", "pip", "install", "-q", "--upgrade", "pip"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        subprocess.check_call(
-            [
-                str(venv_python),
-                "-m",
-                "pip",
-                "install",
-                "-q",
-                "mlx-lm",
-            ],
-            stdout=subprocess.DEVNULL,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"  Warning: Could not install LLM dependencies: {e}")
-        return None
-
-    print("  LLM environment ready")
-    return venv_python
-
-
-def run_llm_in_venv(script: str, timeout: int = 600) -> Optional[str]:
-    """Run LLM script in isolated venv and return output."""
-    venv_python = setup_llm_venv()
-    if not venv_python:
-        return None
-
-    try:
-        result = subprocess.run(
-            [str(venv_python), "-c", script],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-        else:
-            print(f"  LLM error: {result.stderr[:200]}")
-            return None
-    except subprocess.TimeoutExpired:
-        print("  Warning: LLM operation timed out")
-        return None
-    except Exception as e:
-        print(f"  Warning: LLM operation failed: {e}")
-        return None
-
-    if not ensure_llm_dependencies():
-        return None
-
-    from transformers import pipeline
-
-    print("  Loading gpt-oss-20b model (this may take a moment on first run)...")
-    try:
-        _llm_pipeline_cache = pipeline(
-            "text-generation",
-            model="openai/gpt-oss-20b",
-            torch_dtype="auto",
-            device_map="auto",
-        )
-    except Exception as e:
-        print(f"  Warning: Could not load LLM model: {e}")
-        print("  Using fallback bio generation.")
-        return None
-
-    return _llm_pipeline_cache
-
-
-LLM_MODEL = "mlx-community/Qwen2.5-32B-Instruct-4bit"
+    return text
 
 
 def generate_bio_with_llm(first_name: str, year: str) -> str:
     fallback = f"{first_name} joined the lab in {year} and is interested in how people learn and remember."
 
-    script = f'''
-import warnings
-warnings.filterwarnings("ignore")
-from mlx_lm import load, generate
-
-model, tokenizer = load("{LLM_MODEL}")
-
-prompt = tokenizer.apply_chat_template(
-    [{{"role": "user", "content": "Write a single sentence professional bio for {first_name}, an undergraduate who joined a cognitive neuroscience memory research lab in {year}. Keep it generic. Do not use pronouns. Maximum 25 words. Output ONLY the bio sentence, nothing else."}}],
-    tokenize=False,
-    add_generation_prompt=True
-)
-
-bio = generate(model, tokenizer, prompt=prompt, max_tokens=60)
-bio = bio.strip('"').strip()
-if bio and len(bio) > 15 and not bio.lower().startswith("here") and not bio.lower().startswith("sure"):
-    print(bio)
-else:
-    print("")
-'''
+    prompt = (
+        f"Write a single sentence professional bio for {first_name}, an "
+        f"undergraduate who joined a cognitive neuroscience memory research "
+        f"lab in {year}. Keep it generic. Do not use pronouns. Maximum 25 "
+        f"words. Output ONLY the bio sentence, nothing else."
+    )
 
     print("  Generating bio with LLM...")
-    result = run_llm_in_venv(script)
-    if result and len(result) > 15:
-        return result
-    return fallback
+    try:
+        bio = _clean_bio(dartmouth_chat(prompt, max_tokens=200))
+    except DartmouthChatError as exc:
+        print(f"  WARNING: could not reach the LLM service: {exc}")
+        print("  Falling back to a generic bio; edit it by hand in people.xlsx.")
+        return fallback
+
+    return bio if len(bio) > 15 else fallback
 
 
 def edit_bio_with_llm(bio: str, first_name: str) -> str:
-    bio_escaped = (
-        bio.replace("\\", "\\\\")
-        .replace("'", "\\'")
-        .replace('"', '\\"')
-        .replace("\n", " ")
+    prompt = (
+        "Edit this bio. Rules:\n"
+        "1. Write in third person, NOT first person. Never start with \"Hi\", "
+        '"I am", or "I\'m". Use "they/them" unless the original bio itself '
+        "makes the person's pronouns clear -- do not infer them from the "
+        "name. Prefer rewording to avoid pronouns entirely.\n"
+        f'2. Start the bio with the first name "{first_name}" (e.g., '
+        f'"{first_name} is a..."). Do not include the last name.\n'
+        "3. Fix typos and grammar\n"
+        "4. Keep 1-3 sentences max\n"
+        "5. Remove dangerous personal info (SSN, addresses, phone numbers)\n"
+        "6. Keep professional and friendly tone\n\n"
+        f'Original: "{bio}"\n\n'
+        "Output ONLY the edited bio, nothing else:"
     )
 
-    script = f'''
-import warnings
-warnings.filterwarnings("ignore")
-from mlx_lm import load, generate
-
-model, tokenizer = load("{LLM_MODEL}")
-
-prompt = tokenizer.apply_chat_template(
-    [{{"role": "user", "content": """Edit this bio. Rules:
-1. Write in third person (he/she/they), NOT first person. Never start with "Hi", "I am", or "I'm".
-2. Start the bio with the first name "{first_name}" (e.g., "{first_name} is a..."). Do not include the last name.
-3. Fix typos and grammar
-4. Keep 1-3 sentences max
-5. Remove dangerous personal info (SSN, addresses, phone numbers)
-6. Keep professional and friendly tone
-
-Original: "{bio_escaped}"
-
-Output ONLY the edited bio, nothing else:"""}}],
-    tokenize=False,
-    add_generation_prompt=True
-)
-
-edited = generate(model, tokenizer, prompt=prompt, max_tokens=150)
-edited = edited.strip('"').strip()
-if edited and len(edited) > 15 and not edited.lower().startswith("here") and not edited.lower().startswith("edited"):
-    print(edited)
-else:
-    print("")
-'''
-
     print("  Editing bio with LLM...")
-    result = run_llm_in_venv(script)
-    if result and len(result) > 15:
-        return result
-    return bio
+    try:
+        edited = _clean_bio(dartmouth_chat(prompt, max_tokens=400))
+    except DartmouthChatError as exc:
+        print(f"  WARNING: could not reach the LLM service: {exc}")
+        print("  Keeping the bio as supplied.")
+        return bio
+
+    return edited if len(edited) > 15 else bio
 
 
 def parse_name(full_name: str) -> Tuple[str, str]:
