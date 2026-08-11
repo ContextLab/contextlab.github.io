@@ -195,16 +195,24 @@ def _find_role_block(section, role_heading):
     """Match an uncommented '\\newthought{Role} ... \\begin{list} ... \\end{list}'.
 
     Groups: (1) heading through \\begin{list}, (2) the items, (3) \\end{list}.
-    The heading must not be commented out -- inserting a live \\item into a
-    commented-out list produces a LaTeX "Lonely \\item" error.
+
+    Both the heading and the \\begin{list} must be uncommented: inserting a
+    live \\item into a commented-out list produces a LaTeX "Lonely \\item".
+
+    The gap between them may not cross another \\newthought. A plain '.*?'
+    there runs from a heading that has no list of its own -- 'PI' is written
+    as bare text -- straight into the NEXT role's list, so
+    add_member_to_lab_manual(tex, name, 'PI', year) silently filed the new
+    entry under Postdoctoral Researchers.
     """
     pattern = (
-        r'(^[^%\n]*\\newthought\{' + re.escape(role_heading) + r'\}.*?'
-        r'\\begin\{list\}\{\\quad\}\{\})'
-        r'(.*?)'
+        r'(^[^%\n]*\\newthought\{' + re.escape(role_heading) + r'\}'
+        r'(?:(?!\\newthought)[\s\S])*?'
+        r'^[^%\n]*\\begin\{list\}\{\\quad\}\{\})'
+        r'((?:(?!\\end\{list\})[\s\S])*?)'
         r'(\\end\{list\})'
     )
-    return re.search(pattern, section, re.DOTALL | re.MULTILINE)
+    return re.search(pattern, section, re.MULTILINE)
 
 
 def _has_item(items_text, name):
@@ -252,6 +260,27 @@ def _insert_role_block(section, role_heading, item_line):
     return section.rstrip('\n') + '\n\n' + block
 
 
+def _remove_item(section, start, end):
+    """Delete an \\item, taking its line only if nothing else shares it.
+
+    lab_manual.tex has entries like '\\item Caroline Lee (2019 -- 2021)\\end{list}'
+    where the list terminator rides on the same line. Deleting to the end of
+    the line takes the \\end{list} with it and the manual stops building.
+    """
+    line_start = section.rfind('\n', 0, start) + 1
+    line_end = section.find('\n', end)
+    if line_end == -1:
+        line_end = len(section)
+
+    remainder = section[line_start:start] + section[end:line_end]
+    if remainder.strip():
+        # Something real shares this line; excise the entry alone.
+        return section[:start] + section[end:]
+
+    # The line held only this entry, so the newline goes too.
+    return section[:line_start] + section[min(line_end + 1, len(section)):]
+
+
 def _remove_role_block(section, match):
     """Delete a whole role block, including its \\end{multicols} wrapper."""
     end = match.end()
@@ -273,8 +302,11 @@ def find_current_role(tex_path, name):
     )
     section = content[start:end]
 
+    # Only an OPEN range counts. move_member_to_alumni can only close an open
+    # entry, so reporting a role from an entry that was already closed in
+    # place sent sync_member_role off to raise ValueError on it.
     item = re.search(
-        r'^[^%\n]*\\item\s+' + re.escape(name) + r'\*?\s*\(',
+        r'^[^%\n]*\\item\s+' + re.escape(name) + r'\*?\s*\(\d{4}\s*--\s*\)',
         section, re.IGNORECASE | re.MULTILINE
     )
     if not item:
@@ -316,7 +348,11 @@ def add_member_to_lab_manual(tex_path, name, role, start_year):
         # made those two roles impossible to onboard (issue #17). Only known
         # roles get a block created -- otherwise a typo'd --rank would invent
         # a new section rather than being reported.
-        if role_heading not in ROLE_ORDER:
+        # ROLE_ORDER is only for placement and includes PI, which is written
+        # as bare text with no list at all -- creating a second \newthought{PI}
+        # block would be wrong. Only roles onboarding actually knows how to
+        # write are creatable.
+        if role_heading not in set(ROLE_MAP.values()):
             raise ValueError(
                 f"Unknown role '{role}' -- expected one of "
                 f"{sorted(set(ROLE_MAP.values()))}"
@@ -359,9 +395,14 @@ def move_member_to_alumni(tex_path, name, end_year):
     )
     section = content[current_start:alumni_start]
 
+    # Match the \item itself and nothing beyond it. An earlier version ran to
+    # the end of the line, which quietly deleted a trailing \end{list} -- the
+    # real file writes three entries that way, e.g.
+    # '\item Caroline Lee (2019 -- 2021)\end{list}' -- leaving the list
+    # unterminated and the manual unbuildable.
     item_match = re.search(
-        r'^[^%\n]*\\item\s+' + re.escape(name) + r'\*?\s*\((\d{4})\s*--\s*\)[^\n]*\n?',
-        section, re.IGNORECASE | re.MULTILINE
+        r'(?m)^[^%\n]*?\\item\s+' + re.escape(name) + r'\*?\s*\((\d{4})\s*--\s*\)',
+        section, re.IGNORECASE
     )
     if not item_match:
         raise ValueError(f"Could not find '{name}' in Current lab members section")
@@ -373,7 +414,7 @@ def move_member_to_alumni(tex_path, name, end_year):
         raise ValueError(f"Could not determine role for '{name}'")
     role_category = headings[-1].group(1).strip()
 
-    section = section[:item_match.start()] + section[item_match.end():]
+    section = _remove_item(section, item_match.start(), item_match.end())
 
     # Removing the last member leaves an empty list, which is a fatal LaTeX
     # error, so the whole block goes with it.

@@ -278,3 +278,92 @@ class TestCvRoleChange:
             r'\item Role Changer (Doctoral student; 2026 -- )',
             r'\item Role Changer (2024 -- 2026)',
         ]
+
+
+class TestReopenQualifiedEntries:
+    """Real graduate entries carry a qualifier and often a destination:
+
+        \\item Kirsten Ziman (Doctoral student; 2017 -- 2022; current position:
+        Postdoctoral researcher at Princeton University)
+
+    The year-only patterns this replaces could not match those at all, so
+    add_to_cv printed "reopening..." and then returned False, which
+    onboard_member reports as an outright failure.
+    """
+
+    def test_reopens_a_qualified_range(self, cv_file):
+        assert reopen_cv_entry(cv_file, 'Caroline Lee') is True
+        assert entries_for(cv_file, 'Caroline Lee') == [
+            r'\item Caroline Lee (Doctoral student; 2019 -- )']
+
+    def test_add_to_cv_succeeds_for_a_returning_grad(self, cv_file):
+        assert add_to_cv(cv_file, 'Caroline Lee', 'grad student', '2026') is True
+        assert cv_entry_is_open(cv_file, 'Caroline Lee')
+
+    def test_a_recorded_destination_is_dropped(self, tmp_path):
+        p = tmp_path / 'JRM_CV.tex'
+        p.write_text(MINIMAL_CV.replace(
+            r'\item Caroline Lee (Doctoral student; 2019 -- 2021)',
+            r'\item Kirsten Ziman (Doctoral student; 2017 -- 2022; '
+            r'current position: Postdoctoral researcher at Princeton University)'
+        ), encoding='utf-8')
+
+        assert reopen_cv_entry(p, 'Kirsten Ziman') is True
+        assert entries_for(p, 'Kirsten Ziman') == [
+            r'\item Kirsten Ziman (Doctoral student; 2017 -- )']
+
+    def test_already_open_entry_is_left_alone(self, cv_file):
+        before = cv_file.read_text(encoding='utf-8')
+        assert reopen_cv_entry(cv_file, 'Claudia Gonciulea') is False
+        assert cv_file.read_text(encoding='utf-8') == before
+
+    def test_single_year_entry_is_reopened(self, tmp_path):
+        p = tmp_path / 'JRM_CV.tex'
+        p.write_text(MINIMAL_CV.replace(
+            r'\item Old Timer (2019 -- 2021)',
+            r'\item Mark Taylor (Masters student, Quantitative Biomedical Sciences; 2021)'
+        ), encoding='utf-8')
+
+        assert reopen_cv_entry(p, 'Mark Taylor') is True
+        assert entries_for(p, 'Mark Taylor') == [
+            r'\item Mark Taylor (Masters student, Quantitative Biomedical Sciences; 2021 -- )']
+
+    def test_real_cv_returning_graduate_advisee(self, real_cv):
+        """Kirsten Ziman is a real closed graduate entry with a destination."""
+        assert add_to_cv(real_cv, 'Kirsten Ziman', 'grad student', '2026') is True
+        assert cv_entry_is_open(real_cv, 'Kirsten Ziman')
+        assert 'current position' not in entries_for(real_cv, 'Kirsten Ziman')[0]
+
+    def test_every_closed_graduate_advisee_can_be_reopened(self, real_cv):
+        """Not one of them could be, before this."""
+        content = real_cv.read_text(encoding='utf-8')
+        grad_start = content.index(r'\textit{Graduate Advisees}:')
+        grad_end = content.index(r'\textit{Undergraduate Advisees}:')
+        names = re.findall(
+            r'\\item\s+([^(]+?)\s*\([^)]*--\s*\d{4}[^)]*\)',
+            content[grad_start:grad_end]
+        )
+        assert len(names) >= 5, "expected several closed graduate entries"
+
+        for name in names:
+            fresh = real_cv.parent / f"cv_{abs(hash(name))}.tex"
+            fresh.write_text(content, encoding='utf-8')
+            assert reopen_cv_entry(fresh, name.strip()) is True, (
+                f"could not reopen {name.strip()!r}"
+            )
+            assert cv_entry_is_open(fresh, name.strip())
+
+
+class TestCloseCvEntryBreadth:
+    def test_closes_only_the_first_open_entry(self, tmp_path):
+        p = tmp_path / 'JRM_CV.tex'
+        p.write_text(MINIMAL_CV.replace(
+            r'\item Old Timer (2019 -- 2021)',
+            r'\item Rising Star (2018 -- )'
+        ), encoding='utf-8')
+
+        # Two open entries for one name is anomalous; closing a role change
+        # must not sweep up the unrelated one.
+        assert close_cv_entry(p, 'Rising Star', '2026') is True
+        closed = [e for e in entries_for(p, 'Rising Star') if re.search(r'--\s*\d{4}\)', e)]
+        assert len(closed) == 1

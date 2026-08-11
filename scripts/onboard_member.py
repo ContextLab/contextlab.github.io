@@ -918,39 +918,43 @@ def cv_entry_is_open(cv_path: Path, name: str) -> bool:
 
 
 def reopen_cv_entry(cv_path: Path, name: str) -> bool:
-    """Remove end date from CV entry: (YYYY -- YYYY) -> (YYYY -- ) or (YYYY) -> (YYYY -- )."""
+    """Remove the end date from a closed CV entry: (2019 -- 2021) -> (2019 -- ).
+
+    Handles the qualifiers real entries carry, which the year-only patterns
+    this replaces could not match at all:
+
+        \\item Kirsten Ziman (Doctoral student; 2017 -- 2022; current position:
+        Postdoctoral researcher at Princeton University)
+
+    becomes '(Doctoral student; 2017 -- )'. Eight of the eleven graduate
+    advisees are written this way, so onboarding a returning one used to
+    report "reopening..." and then return False, failing the whole run.
+    """
     content = cv_path.read_text(encoding="utf-8")
-    name_escaped = re.escape(name)
+    pattern = r"\\item\s+" + re.escape(name) + r"\*?\s*\(([^)]*)\)"
 
-    # Pattern for closed range: (YYYY -- YYYY)
-    pattern_closed = (
-        r"(\\item\s+" + name_escaped + r"\*?\s*\()(\d{4})(\s*--\s*)(\d{4})(\))"
-    )
-    # Pattern for single year: (YYYY) - but not (YYYY -- )
-    pattern_single = r"(\\item\s+" + name_escaped + r"\*?\s*\()(\d{4})(\))(?!\s*--)"
+    def reopen(inner: str) -> str:
+        # They are back, so a recorded destination is now wrong.
+        inner = re.sub(r";?\s*current position:[^;)]*", "", inner)
+        if re.search(r"\d{4}\s*--\s*\d{4}", inner):
+            inner = re.sub(r"(\d{4})\s*--\s*\d{4}", r"\1 -- ", inner)
+        else:
+            inner = re.sub(r"(\d{4})\s*$", r"\1 -- ", inner)
+        return inner
 
-    def reopen_closed(match):
-        prefix = match.group(1)
-        start_year = match.group(2)
-        suffix = match.group(5)
-        return f"{prefix}{start_year} -- {suffix}"
+    for match in re.finditer(pattern, content, re.IGNORECASE):
+        inner = match.group(1)
+        if re.search(r"--\s*$", inner):
+            continue  # already open
 
-    def reopen_single(match):
-        prefix = match.group(1)
-        year = match.group(2)
-        suffix = match.group(3)
-        return f"{prefix}{year} -- {suffix}"
+        new_inner = reopen(inner)
+        if new_inner == inner:
+            continue
 
-    new_content, count = re.subn(
-        pattern_closed, reopen_closed, content, flags=re.IGNORECASE
-    )
-    if count == 0:
-        new_content, count = re.subn(
-            pattern_single, reopen_single, content, flags=re.IGNORECASE
+        start, end = match.span(1)
+        cv_path.write_text(
+            content[:start] + new_inner + content[end:], encoding="utf-8"
         )
-
-    if count > 0:
-        cv_path.write_text(new_content, encoding="utf-8")
         print(f"  Reopened CV entry for {name}")
         return True
 
@@ -1039,8 +1043,12 @@ def close_cv_entry(cv_path: Path, name: str, end_year: str) -> bool:
     content = cv_path.read_text(encoding="utf-8")
     pattern = r"(\\item\s+" + re.escape(name) + r"\*?\s*\([^)]*?--\s*)\)"
 
+    # count=1: close the first open entry only. Closing every one at a stroke
+    # would rewrite an unrelated second open entry for the same name, which is
+    # never what a single role change means.
     new_content, count = re.subn(
-        pattern, lambda m: f"{m.group(1)}{end_year})", content, flags=re.IGNORECASE
+        pattern, lambda m: f"{m.group(1)}{end_year})", content, count=1,
+        flags=re.IGNORECASE
     )
     if count == 0:
         return False

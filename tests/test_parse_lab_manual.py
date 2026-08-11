@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from parse_lab_manual import (
+    _find_role_block,
     parse_members_chapter,
     add_member_to_lab_manual,
     move_member_to_alumni,
@@ -625,3 +626,280 @@ class TestRealLabManualRoundTrip:
                  for r in parse_members_chapter(real_copy)}
         assert after - before == {('Test Manager', 'Lab Managers', True)}
         assert before - after == set()
+
+
+# The real lab_manual.tex writes some entries with the list terminator riding
+# on the same line as the last \item, e.g.
+#   \item Caroline Lee (2019 -- 2021)\end{list}
+# There are three such lines in the live file.
+CRAMPED_TEX = textwrap.dedent(r"""
+    \chapter{Lab members and alumni}\label{ch:members}
+    \begin{fullwidth}
+    \subsection{Current lab members}\label{sec:curr_members}
+    \newthought{PI}
+    \bigskip
+
+    \enskip Jeremy R. Manning (2015 -- )
+
+    \newthought{Graduate Students}
+    \begin{multicols}{2}\raggedcolumns
+    \begin{list}{\quad}{}
+    \item Alice Smith (2022 -- )
+    \item Bob Jones (2023 -- )\end{list}
+    \end{multicols}
+
+    \newthought{Undergraduate RAs}
+    \begin{multicols}{2}\raggedcolumns
+    \begin{list}{\quad}{}
+    \item Charlie Brown (2024 -- )
+    \end{list}
+    \end{multicols}
+
+    \newpage
+
+    \subsection{Lab alumni}
+    \newthought{Graduate Students}
+    \begin{multicols}{2}\raggedcolumns
+    \begin{list}{\quad}{}
+    \item Dana White (2018 -- 2022)\end{list}
+    \end{multicols}
+    \end{fullwidth}
+""").strip()
+
+
+def assert_environments_balanced(tex_path):
+    """\\begin and \\end counts must match for every environment we touch."""
+    content = tex_path.read_text(encoding='utf-8')
+    uncommented = '\n'.join(
+        line for line in content.split('\n') if not line.strip().startswith('%')
+    )
+    for env in ('list', 'multicols', 'fullwidth'):
+        opens = len(re.findall(r'\\begin\{' + env + r'\}', uncommented))
+        closes = len(re.findall(r'\\end\{' + env + r'\}', uncommented))
+        assert opens == closes, (
+            f"{env}: {opens} begin vs {closes} end -- LaTeX would not build"
+        )
+
+
+class TestSameLineListTerminator:
+    """Removing an \\item must not take a trailing \\end{list} with it."""
+
+    @pytest.fixture
+    def cramped(self, tmp_path):
+        p = tmp_path / 'lab_manual.tex'
+        p.write_text(CRAMPED_TEX, encoding='utf-8')
+        return p
+
+    def test_removing_it_keeps_the_terminator(self, cramped):
+        move_member_to_alumni(cramped, 'Bob Jones', 2026)
+
+        content = cramped.read_text(encoding='utf-8')
+        current = content[content.index(r'\subsection{Current lab members}'):
+                          content.index(r'\subsection{Lab alumni}')]
+        assert 'Bob Jones' not in current
+        # The \end{list} that shared his line must still be there.
+        assert content.count(r'\end{list}') == content.count(r'\begin{list}')
+        assert_environments_balanced(cramped)
+
+    def test_the_role_block_survives(self, cramped):
+        move_member_to_alumni(cramped, 'Bob Jones', 2026)
+
+        assert 'Graduate Students' in headings_in(
+            cramped, 'Current lab members', 'Lab alumni')
+        active = {r['name'] for r in parse_members_chapter(cramped) if r['is_active']}
+        assert 'Alice Smith' in active
+
+    def test_removing_the_last_one_still_balances(self, cramped):
+        move_member_to_alumni(cramped, 'Bob Jones', 2026)
+        move_member_to_alumni(cramped, 'Alice Smith', 2026)
+
+        assert_environments_balanced(cramped)
+        assert 'Graduate Students' not in headings_in(
+            cramped, 'Current lab members', 'Lab alumni')
+
+    def test_alumni_entry_lands_beside_a_cramped_one(self, cramped):
+        move_member_to_alumni(cramped, 'Bob Jones', 2026)
+
+        record = next(r for r in parse_members_chapter(cramped)
+                      if r['name'] == 'Bob Jones')
+        assert record['end_year'] == 2026
+        assert not record['is_active']
+        assert_environments_balanced(cramped)
+
+
+class TestRoleBlockScoping:
+    """A role heading must never capture a different role's list."""
+
+    def test_pi_does_not_capture_the_next_role(self, tex_file):
+        """'PI' is bare text with no list, so a greedy match ran into the
+        Graduate Students list and filed the new entry there.
+        """
+        with pytest.raises(ValueError, match="Unknown role"):
+            add_member_to_lab_manual(tex_file, 'Fake Person', 'PI', 2026)
+
+        assert 'Fake Person' not in tex_file.read_text(encoding='utf-8')
+
+    def test_find_role_block_returns_none_for_a_listless_heading(self, tex_file):
+        content = tex_file.read_text(encoding='utf-8')
+        section = content[content.index(r'\subsection{Current lab members}'):
+                          content.index(r'\subsection{Lab alumni}')]
+        assert _find_role_block(section, 'PI') is None
+
+    def test_commented_out_list_under_a_live_heading_is_not_used(self, tmp_path):
+        """A live heading over a commented list must not receive a live \\item."""
+        tex = MINIMAL_TEX.replace(
+            '\\newthought{Undergraduate RAs}\n'
+            '\\begin{multicols}{2}\\raggedcolumns\n'
+            '\\begin{list}{\\quad}{}\n'
+            '\\item Charlie Brown (2024 -- )\n'
+            '\\end{list}\n'
+            '\\end{multicols}',
+            '\\newthought{Undergraduate RAs}\n'
+            '% \\begin{multicols}{2}\\raggedcolumns\n'
+            '% \\begin{list}{\\quad}{}\n'
+            '% \\end{list}\n'
+            '% \\end{multicols}'
+        )
+        p = tmp_path / 'lab_manual.tex'
+        p.write_text(tex, encoding='utf-8')
+
+        add_member_to_lab_manual(p, 'New Undergrad', 'undergrad', 2026)
+
+        content = p.read_text(encoding='utf-8')
+        for line in content.split('\n'):
+            if 'New Undergrad' in line:
+                assert not line.strip().startswith('%'), (
+                    "the entry was written inside a commented-out block"
+                )
+        assert_environments_balanced(p)
+
+
+class TestRemoveRoleBlockPrecision:
+    """_remove_role_block must take exactly its own block."""
+
+    def test_it_takes_the_end_multicols_too(self, tex_file):
+        add_member_to_lab_manual(tex_file, 'Only Manager', 'lab manager', 2026)
+        move_member_to_alumni(tex_file, 'Only Manager', 2027)
+        assert_environments_balanced(tex_file)
+
+    def test_it_leaves_the_following_heading_intact(self, tex_file):
+        add_member_to_lab_manual(tex_file, 'Only Manager', 'lab manager', 2026)
+        before = headings_in(tex_file, 'Current lab members', 'Lab alumni')
+        move_member_to_alumni(tex_file, 'Only Manager', 2027)
+        after = headings_in(tex_file, 'Current lab members', 'Lab alumni')
+
+        assert set(before) - set(after) == {'Lab Managers'}
+
+    def test_it_does_not_eat_the_newpage(self, tmp_path):
+        p = tmp_path / 'lab_manual.tex'
+        p.write_text(CRAMPED_TEX, encoding='utf-8')
+
+        add_member_to_lab_manual(p, 'Only Manager', 'lab manager', 2026)
+        move_member_to_alumni(p, 'Only Manager', 2027)
+
+        content = p.read_text(encoding='utf-8')
+        current = content[content.index(r'\subsection{Current lab members}'):
+                          content.index(r'\subsection{Lab alumni}')]
+        assert r'\newpage' in current
+
+    def test_a_block_with_no_multicols_wrapper_is_removed_cleanly(self, tmp_path):
+        tex = MINIMAL_TEX.replace(
+            '\\newthought{Undergraduate RAs}\n'
+            '\\begin{multicols}{2}\\raggedcolumns\n'
+            '\\begin{list}{\\quad}{}\n'
+            '\\item Charlie Brown (2024 -- )\n'
+            '\\end{list}\n'
+            '\\end{multicols}',
+            '\\newthought{Undergraduate RAs}\n'
+            '\\begin{list}{\\quad}{}\n'
+            '\\item Charlie Brown (2024 -- )\n'
+            '\\end{list}'
+        )
+        p = tmp_path / 'lab_manual.tex'
+        p.write_text(tex, encoding='utf-8')
+
+        move_member_to_alumni(p, 'Charlie Brown', 2026)
+        assert_environments_balanced(p)
+
+
+class TestStaleClosedCurrentEntry:
+    """A Current entry closed in place must not crash sync_member_role."""
+
+    @pytest.fixture
+    def stale(self, tmp_path):
+        p = tmp_path / 'lab_manual.tex'
+        p.write_text(
+            MINIMAL_TEX.replace(
+                r'\item Charlie Brown (2024 -- )',
+                r'\item Charlie Brown (2024 -- 2025)'
+            ),
+            encoding='utf-8'
+        )
+        return p
+
+    def test_find_current_role_ignores_a_closed_entry(self, stale):
+        assert find_current_role(stale, 'Charlie Brown') is None
+
+    def test_sync_does_not_raise(self, stale):
+        # Must reach a decision rather than blowing up inside
+        # move_member_to_alumni, which can only close an OPEN range.
+        outcome = sync_member_role(stale, 'Charlie Brown', 'grad student', 2026)
+        assert outcome in {'added', 'unchanged', 'role-changed'}
+        assert_environments_balanced(stale)
+
+
+class TestStarredEntries:
+    """The real CV marks senior-thesis students with '*', and the lab manual
+    guard mirrors that so a starred entry is the same person.
+    """
+
+    def test_a_starred_open_entry_blocks_a_duplicate(self, tmp_path):
+        p = tmp_path / 'lab_manual.tex'
+        p.write_text(
+            MINIMAL_TEX.replace(
+                r'\item Charlie Brown (2024 -- )',
+                r'\item Charlie Brown* (2024 -- )'
+            ),
+            encoding='utf-8'
+        )
+        assert add_member_to_lab_manual(p, 'Charlie Brown', 'undergrad', 2026) is False
+
+    def test_a_starred_entry_is_found_by_find_current_role(self, tmp_path):
+        p = tmp_path / 'lab_manual.tex'
+        p.write_text(
+            MINIMAL_TEX.replace(
+                r'\item Charlie Brown (2024 -- )',
+                r'\item Charlie Brown* (2024 -- )'
+            ),
+            encoding='utf-8'
+        )
+        assert find_current_role(p, 'Charlie Brown') == 'Undergraduate RAs'
+
+
+class TestRealManualStaysBuildable:
+    """Every mutation of the real file must leave balanced environments."""
+
+    @pytest.fixture
+    def real_copy(self, tmp_path):
+        real = Path(__file__).parent.parent / 'lab-manual' / 'lab_manual.tex'
+        if not real.exists():
+            pytest.skip("lab-manual submodule not initialized")
+        target = tmp_path / 'lab_manual.tex'
+        target.write_text(real.read_text(encoding='utf-8'), encoding='utf-8')
+        return target
+
+    def test_starting_point_is_balanced(self, real_copy):
+        assert_environments_balanced(real_copy)
+
+    def test_offboarding_a_real_member_keeps_it_balanced(self, real_copy):
+        move_member_to_alumni(real_copy, 'Ansh Patel', 2026)
+        assert_environments_balanced(real_copy)
+
+    def test_a_full_round_trip_keeps_it_balanced(self, real_copy):
+        sync_member_role(real_copy, 'Test Manager', 'lab manager', 2026)
+        sync_member_role(real_copy, 'Test RA', 'research assistant', 2026)
+        sync_member_role(real_copy, 'Test RA', 'grad student', 2027)
+        move_member_to_alumni(real_copy, 'Test Manager', 2027)
+        move_member_to_alumni(real_copy, 'Test RA', 2028)
+        assert_environments_balanced(real_copy)
+        assert_no_empty_lists(real_copy)
