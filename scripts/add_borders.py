@@ -390,7 +390,8 @@ def process_images(
     output_dir: Path,
     svg_path: Path,
     output_size: int = OUTPUT_SIZE,
-    use_face_detection: bool = False
+    use_face_detection: bool = False,
+    seed: int = None
 ) -> None:
     """Process images, adding borders after optional crop and resize.
 
@@ -448,8 +449,14 @@ def process_images(
         if img.size != pre_resize:
             print(f"    Resized to {img.size[0]}x{img.size[1]}")
 
-        # Step 3: Select random border and composite
-        border = random.choice(borders)
+        # Step 3: Select a border and composite. Seeding per image, rather
+        # than once for the whole run, keeps each image's border stable no
+        # matter how many others are processed alongside it -- so re-running
+        # onboarding for one member does not reshuffle everyone else.
+        if seed is not None:
+            border = random.Random(f"{seed}:{img_path.stem}").choice(borders)
+        else:
+            border = random.choice(borders)
         result = add_border_to_image(img, border)
 
         # Save as PNG (output name based on input, always .png)
@@ -493,6 +500,14 @@ def main():
         default=OUTPUT_SIZE,
         help=f'Output image size in pixels (default: {OUTPUT_SIZE})'
     )
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=None,
+        help='Pick each border deterministically from this seed. Without it '
+             'the border is chosen at random, so re-running gives a member a '
+             'different border every time.'
+    )
 
     args = parser.parse_args()
 
@@ -509,7 +524,8 @@ def main():
         args.output_dir,
         args.border_svg,
         args.output_size,
-        use_face_detection=args.face
+        use_face_detection=args.face,
+        seed=args.seed
     )
 
 
