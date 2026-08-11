@@ -44,3 +44,9 @@ missfont.log
 .omc/
 .specify/
 data/~$publications.xlsx
+
+# Local secrets. onboard_member.py reads DARTMOUTH_CHAT_API_KEY from here;
+# it must never be committed.
+.env
+.env.*
+!.env.example

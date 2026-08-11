@@ -1,0 +1,71 @@
+name: Test Dartmouth Chat API
+
+# Onboarding rewrites member bios with an LLM. That call goes to Dartmouth's
+# own chat.dartmouth.edu rather than a paid third-party API, so this workflow
+# is what proves the key still works, the model we name still exists, and the
+# response still has the shape the code unpacks.
+#
+# Runs on demand, weekly, and whenever the client or its callers change.
+# It never prints the key -- only model identifiers and generated text.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/dartmouth_chat.py'
+      - 'scripts/onboard_member.py'
+      - '.github/workflows/test-llm-api.yml'
+  workflow_dispatch:
+  schedule:
+    # Mondays, 09:30 UTC. Catches a revoked key or a retired model before an
+    # onboarding run does.
+    - cron: '30 9 * * 1'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: List the models this account can reach
+        env:
+          # Via env, never inline in the script: an inline ${{ }} would be
+          # substituted into the source before it runs.
+          DARTMOUTH_CHAT_API_KEY: ${{ secrets.DARTMOUTH_CHAT_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json, os, sys
+          import requests
+
+          key = os.environ.get("DARTMOUTH_CHAT_API_KEY")
+          if not key:
+              sys.exit("::error::DARTMOUTH_CHAT_API_KEY is not set")
+          print(f"key present, {len(key)} chars")
+
+          base = "https://chat.dartmouth.edu"
+          headers = {"Authorization": f"Bearer {key}"}
+
+          for path in ("/api/models", "/openai/v1/models"):
+              r = requests.get(base + path, headers=headers, timeout=60)
+              print(f"\n=== GET {path} -> {r.status_code} ===")
+              if r.status_code != 200:
+                  print("  ", r.text[:300])
+                  continue
+              data = r.json().get("data", [])
+              print(f"  {len(data)} models")
+              ids = sorted(m.get("id", "?") for m in data)
+              for i in ids:
+                  print("   ", i)
+              qwen = [i for i in ids if "qwen" in i.lower()]
+              print(f"\n  QWEN MODELS: {qwen}")
+          PY
