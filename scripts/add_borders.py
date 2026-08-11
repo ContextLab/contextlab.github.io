@@ -16,6 +16,7 @@ Usage:
 """
 import argparse
 import random
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -176,6 +177,65 @@ def crop_to_square(img: Image.Image, use_face_detection: bool = False) -> Image.
     return img.crop((left, top, left + crop_size, top + crop_size))
 
 
+def render_svg_to_png(svg_path: Path, width: int, height: int, out_path: str) -> str:
+    """Rasterise an SVG, using whichever renderer this machine actually has.
+
+    This used to call rsvg-convert unconditionally. That is a SYSTEM package,
+    not a pip one, and it was documented only for macOS -- so on a fresh Linux
+    or Windows machine processing a member photo died with the thoroughly
+    unhelpful "No borders could be loaded!". Trying several renderers means
+    photo processing works wherever any one of them is present.
+
+    Returns the name of the renderer used, for the error message if all fail.
+    """
+    attempts = []
+
+    # 1. rsvg-convert (librsvg). Fastest, and what this was written against.
+    if shutil.which('rsvg-convert'):
+        result = subprocess.run(
+            ['rsvg-convert', '-w', str(width), '-h', str(height),
+             '-o', out_path, str(svg_path)],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            return 'rsvg-convert'
+        attempts.append(f"rsvg-convert: {result.stderr.strip()[:200]}")
+
+    # 2. Inkscape. Present on Windows via winget, where librsvg is not.
+    inkscape = shutil.which('inkscape') or shutil.which('inkscape.exe')
+    if inkscape:
+        result = subprocess.run(
+            [inkscape, '--export-type=png', f'--export-filename={out_path}',
+             '-w', str(width), '-h', str(height), str(svg_path)],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0 and Path(out_path).exists():
+            return 'inkscape'
+        attempts.append(f"inkscape: {result.stderr.strip()[:200]}")
+
+    # 3. cairosvg. Pure pip, so it needs no system package at all.
+    try:
+        import cairosvg
+    except ImportError:
+        attempts.append("cairosvg: not installed (pip install cairosvg)")
+    else:
+        cairosvg.svg2png(
+            url=str(svg_path), write_to=out_path,
+            output_width=width, output_height=height,
+        )
+        return 'cairosvg'
+
+    raise RuntimeError(
+        "Could not rasterise the border SVG: no working renderer found.\n"
+        "Install ONE of:\n"
+        "  macOS:   brew install librsvg\n"
+        "  Linux:   sudo apt install librsvg2-bin\n"
+        "  Windows: winget install Inkscape.Inkscape\n"
+        "  any:     pip install cairosvg\n"
+        + ("Tried: " + "; ".join(attempts) if attempts else "")
+    )
+
+
 def extract_border_from_svg(svg_path: Path, region_idx: int, output_size: int) -> Image.Image:
     """Extract a single border region from the SVG and render it as PNG.
 
@@ -199,21 +259,11 @@ def extract_border_from_svg(svg_path: Path, region_idx: int, output_size: int) -
         tmp_path = tmp.name
 
     try:
-        # Try using rsvg-convert (from librsvg)
-        # Render at scale with the region we want
+        # Render the whole sheet, then crop out the region we want.
         full_width = 932.84 * scale
         full_height = 2493.86 * scale
 
-        result = subprocess.run([
-            'rsvg-convert',
-            '-w', str(int(full_width)),
-            '-h', str(int(full_height)),
-            '-o', tmp_path,
-            str(svg_path)
-        ], capture_output=True, text=True)
-
-        if result.returncode != 0:
-            raise RuntimeError(f"rsvg-convert failed: {result.stderr}")
+        render_svg_to_png(svg_path, int(full_width), int(full_height), tmp_path)
 
         # Load and crop to the border region
         full_img = Image.open(tmp_path)

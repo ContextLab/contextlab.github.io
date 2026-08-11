@@ -615,7 +615,13 @@ The script requires:
 - PIL/Pillow
 - NumPy
 - mediapipe (for `--face` option; model downloads automatically on first use)
-- `rsvg-convert` (from librsvg, install via `brew install librsvg` on macOS)
+- An SVG renderer for the border templates -- **any one** of:
+  - `rsvg-convert`: `brew install librsvg` (macOS) / `sudo apt install librsvg2-bin` (Linux)
+  - Inkscape: `winget install Inkscape.Inkscape` (Windows)
+  - `pip install cairosvg` (any platform, no system package needed)
+
+  `scripts/setup.sh` installs one automatically. Without any of them, photo
+  processing fails with "No borders could be loaded!".
 
 ## Mobile Responsiveness
 
