@@ -16,9 +16,117 @@ from onboard_member import (
     cv_entry_is_open,
     cv_section_for_role,
     find_cv_section,
+    invitation_login,
     member_exists_in_cv,
     reopen_cv_entry,
+    stated_pronouns,
 )
+
+
+class TestStatedPronouns:
+    """The check that decides whether an LLM edit may be published.
+
+    Prompt wording alone did not hold: the model would satisfy "keep his
+    pronouns" by rewriting the sentence so no pronoun was needed.
+    """
+
+    def test_finds_masculine_pronouns(self):
+        assert stated_pronouns("His research interests lie in memory.") == {"he"}
+        assert stated_pronouns("He studies memory.") == {"he"}
+        assert stated_pronouns("The lab hired him in 2026.") == {"he"}
+
+    def test_finds_feminine_pronouns(self):
+        assert stated_pronouns("She enjoys running and baking.") == {"she"}
+        assert stated_pronouns("Her work is on causal inference.") == {"she"}
+
+    def test_a_pronoun_free_bio_reports_nothing(self):
+        assert stated_pronouns("Sreshth studies causal inference.") == frozenset()
+
+    def test_they_them_is_not_a_gendered_group(self):
+        """they/them is the neutral default, not something to preserve."""
+        assert stated_pronouns("They study memory and their work is on LLMs.") == (
+            frozenset()
+        )
+
+    def test_substrings_do_not_count_as_pronouns(self):
+        """The regex is word-based; "the", "here", "this" must not match."""
+        assert stated_pronouns("The history of these theories is here.") == (
+            frozenset()
+        )
+        assert stated_pronouns("Sheffield and Hershey are places.") == frozenset()
+
+    def test_is_case_insensitive(self):
+        assert stated_pronouns("HIS work. He studies memory.") == {"he"}
+
+    def test_empty_and_missing_text(self):
+        assert stated_pronouns("") == frozenset()
+        assert stated_pronouns(None) == frozenset()
+
+    def test_the_exact_regression_case(self):
+        """Sreshth's submitted bio versus what onboarding published."""
+        submitted = (
+            "Sreshth is a Mathematics and Computer Science double major at "
+            "Dartmouth College. His research interests lie in causal inference."
+        )
+        published = submitted.replace("His", "Their")
+        reworded = (
+            "Sreshth is a Mathematics and Computer Science double major at "
+            "Dartmouth College with research interests in causal inference."
+        )
+
+        assert stated_pronouns(submitted) == {"he"}
+        # Both failure modes must be visible to the guard.
+        assert stated_pronouns(published) != stated_pronouns(submitted)
+        assert stated_pronouns(reworded) != stated_pronouns(submitted)
+
+
+class TestInvitationLogin:
+    """Whose invitation is this?
+
+    Onboarding re-sent Sreshth Tiwari's org invitation on every run because
+    GitHub returned it with a null `login`, and reading only that field made
+    the pending list come back empty.
+    """
+
+    def test_reads_the_login_when_github_supplies_one(self):
+        assert invitation_login({"login": "octocat", "email": None}) == "octocat"
+
+    def test_falls_back_to_a_noreply_address(self):
+        """The exact payload that caused the duplicate invitations."""
+        assert (
+            invitation_login(
+                {
+                    "login": None,
+                    "email": "SreshthTiwari@users.noreply.github.com",
+                }
+            )
+            == "SreshthTiwari"
+        )
+
+    def test_strips_the_numeric_id_prefix(self):
+        """Accounts created after mid-2017 use "<id>+<username>@..."."""
+        assert (
+            invitation_login(
+                {"login": None, "email": "1234567+octocat@users.noreply.github.com"}
+            )
+            == "octocat"
+        )
+
+    def test_a_real_email_is_not_treated_as_a_username(self):
+        """An invite sent to a personal address names nobody we can match."""
+        assert invitation_login({"login": None, "email": "someone@gmail.com"}) == ""
+
+    def test_missing_fields_do_not_raise(self):
+        assert invitation_login({}) == ""
+        assert invitation_login({"login": None, "email": None}) == ""
+
+    def test_the_match_is_case_insensitive_at_the_call_site(self):
+        """invite_to_github_org lowercases both sides, so casing must not
+        decide whether someone gets a second invitation."""
+        login = invitation_login(
+            {"login": None, "email": "SreshthTiwari@users.noreply.github.com"}
+        )
+        assert login.lower() == "sreshthtiwari"
 
 
 # Mirrors the three mentorship subsections of the real JRM_CV.tex, including

@@ -144,8 +144,43 @@ class TestOnboardingBios:
         The model was guessing pronouns from the first name until the prompt
         told it not to, so this pins the behaviour.
         """
+        from onboard_member import stated_pronouns
+
         _, edit = self._bios()
         out = edit("im jamie, a sophomore who likes fMRI and coding", "Jamie")
-        lowered = f" {out.lower()} "
-        assert " he " not in lowered and " his " not in lowered
-        assert " she " not in lowered and " her " not in lowered
+        assert stated_pronouns(out) == frozenset(), (
+            f"invented pronouns for a name: {out}"
+        )
+
+    def test_edit_keeps_pronouns_the_person_wrote(self):
+        """The other half of the rule above, and the one that broke.
+
+        Sreshth Tiwari submitted a bio saying "His research interests lie in
+        causal inference"; onboarding published "Their research interests",
+        which is exactly the erasure the rule was supposed to prevent.
+
+        Compared by group, not by exact word -- "He is passionate about
+        causal inference" keeps his pronouns and is a fine edit.
+        """
+        from onboard_member import stated_pronouns
+
+        _, edit = self._bios()
+        out = edit(
+            "Sreshth is a Mathematics and Computer Science double major at "
+            "Dartmouth College. His research interests lie in causal "
+            "inference and machine learning.",
+            "Sreshth",
+        )
+        assert stated_pronouns(out) == {"he"}, f"changed his pronouns: {out}"
+
+    def test_edit_keeps_her_pronouns_too(self):
+        """The same rule, so it is not pinned for one pronoun only."""
+        from onboard_member import stated_pronouns
+
+        _, edit = self._bios()
+        out = edit(
+            "Sadie is a '27 from Nashville, Tennessee. She enjoys running "
+            "and baking.",
+            "Sadie",
+        )
+        assert stated_pronouns(out) == {"she"}, f"changed her pronouns: {out}"

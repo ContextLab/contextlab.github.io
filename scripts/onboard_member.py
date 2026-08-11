@@ -119,6 +119,29 @@ def is_github_org_member(username: str) -> bool:
     return result.returncode == 0
 
 
+def invitation_login(invitation: dict) -> str:
+    """The username a pending invitation refers to.
+
+    GitHub leaves `login` null whenever it recorded the invite against an
+    email address rather than an account, which is what happens for users
+    whose email is private. Sreshth Tiwari's came back as::
+
+        {"login": null, "email": "SreshthTiwari@users.noreply.github.com"}
+
+    Reading only `login` dropped those, so the caller saw an empty list and
+    re-sent the invitation on every run.
+    """
+    login = invitation.get("login")
+    if login:
+        return login
+
+    local, _, domain = (invitation.get("email") or "").partition("@")
+    if domain.lower() == "users.noreply.github.com":
+        # Accounts created after mid-2017 use "<id>+<username>@...".
+        return local.split("+")[-1]
+    return ""
+
+
 def get_pending_invitations() -> List[str]:
     """Get list of usernames with pending org invitations."""
     result = subprocess.run(
@@ -127,10 +150,16 @@ def get_pending_invitations() -> List[str]:
         text=True,
     )
     if result.returncode != 0:
+        # Staying quiet here reads as "nobody is invited" and silently
+        # re-invites everyone, so say so instead.
+        print(
+            "    Warning: could not read pending invitations "
+            f"({result.stderr.strip() or 'gh exited ' + str(result.returncode)})"
+        )
         return []
 
     invitations = json.loads(result.stdout)
-    return [inv.get("login", "") for inv in invitations if inv.get("login")]
+    return [login for login in map(invitation_login, invitations) if login]
 
 
 def invite_to_github_org(username: str, team_names: Optional[List[str]] = None) -> bool:
@@ -441,32 +470,109 @@ def generate_bio_with_llm(first_name: str, year: str) -> str:
     return bio if len(bio) > 15 else fallback
 
 
-def edit_bio_with_llm(bio: str, first_name: str) -> str:
-    prompt = (
-        "Edit this bio. Rules:\n"
-        "1. Write in third person, NOT first person. Never start with \"Hi\", "
-        '"I am", or "I\'m". Use "they/them" unless the original bio itself '
-        "makes the person's pronouns clear -- do not infer them from the "
-        "name. Prefer rewording to avoid pronouns entirely.\n"
-        f'2. Start the bio with the first name "{first_name}" (e.g., '
-        f'"{first_name} is a..."). Do not include the last name.\n'
-        "3. Fix typos and grammar\n"
-        "4. Keep 1-3 sentences max\n"
-        "5. Remove dangerous personal info (SSN, addresses, phone numbers)\n"
-        "6. Keep professional and friendly tone\n\n"
-        f'Original: "{bio}"\n\n'
-        "Output ONLY the edited bio, nothing else:"
+PRONOUN_GROUPS = {
+    "he": {"he", "him", "his"},
+    "she": {"she", "her", "hers"},
+}
+
+
+def stated_pronouns(text: str) -> frozenset:
+    """Which gendered pronoun groups a bio uses, if any.
+
+    Returns a subset of {"he", "she"}; an empty set means the bio is already
+    pronoun-free, which is what a first-person submission looks like before
+    editing.
+    """
+    words = set(re.findall(r"[a-z]+", (text or "").lower()))
+    return frozenset(
+        group for group, forms in PRONOUN_GROUPS.items() if words & forms
     )
 
-    print("  Editing bio with LLM...")
-    try:
-        edited = _clean_bio(dartmouth_chat(prompt, max_tokens=400))
-    except DartmouthChatError as exc:
-        print(f"  WARNING: could not reach the LLM service: {exc}")
-        print("  Keeping the bio as supplied.")
-        return bio
 
-    return edited if len(edited) > 15 else bio
+BIO_EDIT_RULES = (
+    "Edit this bio. Rules:\n"
+    "1. Write in third person, NOT first person. Never start with \"Hi\", "
+    '"I am", or "I\'m".\n'
+    "2. PRONOUNS: if the original bio already uses gendered pronouns "
+    "(he/him/his, she/her/hers), keep exactly those -- the person wrote "
+    "them about themselves, so never swap them for \"they/them\" and "
+    "never reword them away. ONLY when the original contains no pronouns "
+    "at all may you use \"they/them\" or reword to avoid pronouns. Never "
+    "infer pronouns from the name.\n"
+    '3. Start the bio with the first name "{first_name}" (e.g., '
+    '"{first_name} is a..."). Do not include the last name.\n'
+    "4. Fix typos and grammar\n"
+    "5. Keep 1-3 sentences max\n"
+    "6. Remove dangerous personal info (SSN, addresses, phone numbers)\n"
+    "7. Keep professional and friendly tone\n\n"
+)
+
+BIO_EDIT_ATTEMPTS = 3
+
+
+def edit_bio_with_llm(bio: str, first_name: str) -> str:
+    """Tidy a submitted bio without changing whose it is.
+
+    The pronoun rule is checked in code rather than trusted to the prompt.
+    Even with rule 2 spelled out, the model intermittently satisfies it by
+    rewriting "His research interests lie in causal inference" into
+    "...with research interests in causal inference" -- pronoun gone, rule
+    technically unbroken. Publishing that erases what someone said about
+    themselves, so an edit that changes the bio's pronouns is rejected and
+    retried, and the submitted text stands if the model will not comply.
+    """
+    prompt = BIO_EDIT_RULES.format(first_name=first_name) + (
+        f'Original: "{bio}"\n\n' "Output ONLY the edited bio, nothing else:"
+    )
+    wanted = stated_pronouns(bio)
+
+    print("  Editing bio with LLM...")
+    for attempt in range(BIO_EDIT_ATTEMPTS):
+        try:
+            edited = _clean_bio(dartmouth_chat(prompt, max_tokens=400))
+        except DartmouthChatError as exc:
+            print(f"  WARNING: could not reach the LLM service: {exc}")
+            print("  Keeping the bio as supplied.")
+            return bio
+
+        if len(edited) <= 15:
+            return bio
+
+        got = stated_pronouns(edited)
+        if got == wanted:
+            return edited
+
+        if wanted:
+            problem = (
+                f"it dropped the pronoun the bio used ({'/'.join(sorted(wanted))})"
+            )
+            insist = (
+                "Your previous attempt REMOVED the pronouns the person used "
+                f"about themselves ({', '.join(sorted(wanted))}). Keep them, "
+                "word for word. Do not rephrase to avoid them."
+            )
+        else:
+            problem = f"it invented pronouns ({'/'.join(sorted(got))})"
+            insist = (
+                "Your previous attempt ADDED gendered pronouns "
+                f"({', '.join(sorted(got))}) that the original did not use. "
+                "Do not guess someone's pronouns. Use \"they/them\" or reword "
+                "to avoid pronouns."
+            )
+
+        print(
+            f"  Retrying bio edit ({attempt + 1}/{BIO_EDIT_ATTEMPTS}): {problem}"
+        )
+        prompt = (
+            BIO_EDIT_RULES.format(first_name=first_name)
+            + insist
+            + f'\n\nOriginal: "{bio}"\n\n'
+            + "Output ONLY the edited bio, nothing else:"
+        )
+
+    print("  WARNING: the LLM kept changing the bio's pronouns.")
+    print("  Keeping the bio as supplied.")
+    return bio
 
 
 def parse_name(full_name: str) -> Tuple[str, str]:
@@ -1097,7 +1203,8 @@ def onboard_member(
 
     if not skip_llm:
         if bio:
-            print("  Editing bio with LLM...")
+            # edit_bio_with_llm announces itself; saying it here too printed
+            # the same line twice.
             bio = edit_bio_with_llm(bio, first_name)
             print(f"  Bio: {bio[:100]}...")
         else:
