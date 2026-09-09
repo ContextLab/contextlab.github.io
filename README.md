@@ -456,15 +456,21 @@ The `extract_cv.py` script provides a custom LaTeX-to-HTML converter that handle
 ### Key Functions in extract_cv.py
 
 | Function | Purpose |
-|----------|---------|
+|-|-|
 | `extract_document_body()` | Extract content between `\begin{document}` and `\end{document}` |
 | `balanced_braces_extract()` | Parse nested LaTeX braces correctly |
 | `convert_latex_formatting()` | Convert LaTeX commands to HTML |
 | `parse_etaremune()` | Parse reverse-numbered publication lists |
 | `extract_header_info()` | Extract name and contact information |
 | `extract_sections()` | Split document into sections/subsections |
+| `extract_footnote()` | Pull `\blfootnote{}` out of a section, returning `(footnote_html, remaining_content)` |
+| `preprocess_content()` | Strip comments, the footnote, `\vspace`, and the "Last updated" line before parsing; returns `(footnote, cleaned_content)` |
 | `render_section_content()` | Convert section content based on type |
 | `generate_html()` | Assemble complete HTML document |
+
+> `preprocess_content()` is the single entry point for footnote handling — it always
+> returns the `(footnote, content)` pair, and `extract_footnote()` strips the
+> `\blfootnote` it extracts, so a footnote never survives into the rendered body.
 
 ### CV Stylesheet (cv.css)
 

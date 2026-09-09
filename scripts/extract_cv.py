@@ -8,7 +8,7 @@ and produces HTML that matches the PDF formatting exactly.
 
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 
@@ -280,7 +280,7 @@ def parse_labeled_lists(content: str) -> List[tuple]:
 
 def extract_header_info(body: str) -> Dict[str, str]:
     """Extract header information (name, title, contact)."""
-    info = {}
+    info: Dict[str, Any] = {}
 
     # Find header section (before first section)
     header_match = re.search(r'^(.+?)\\section\*', body, re.DOTALL)
@@ -428,7 +428,7 @@ def render_labeled_lists(labeled_lists: List[tuple], use_two_column: bool = Fals
     return html
 
 
-def extract_footnote(content: str) -> tuple:
+def extract_footnote(content: str) -> Tuple[Optional[str], str]:
     """Extract blfootnote content from text. Returns (footnote_text, cleaned_content)."""
     pattern = r'\\blfootnote\{'
     match = re.search(pattern, content)
@@ -446,22 +446,17 @@ def extract_footnote(content: str) -> tuple:
     return None, content
 
 
-def preprocess_content(content: str, extract_footnotes: bool = False) -> tuple:
+def preprocess_content(content: str) -> Tuple[Optional[str], str]:
     """Preprocess content to handle problematic LaTeX commands before parsing.
 
-    If extract_footnotes is True, returns (footnote, cleaned_content).
-    Otherwise returns just cleaned_content for backwards compatibility.
+    Returns (footnote, cleaned_content). extract_footnote strips the
+    \\blfootnote it extracts, so the footnote never survives into the body.
     """
     # Remove comments first
     content = re.sub(r'^%.*$', '', content, flags=re.MULTILINE)
     content = re.sub(r'(?<!\\)%.*$', '', content, flags=re.MULTILINE)
 
-    footnote = None
-    if extract_footnotes:
-        footnote, content = extract_footnote(content)
-    else:
-        # Remove blfootnote (with nested braces)
-        content = remove_command_with_braces(content, 'blfootnote')
+    footnote, content = extract_footnote(content)
 
     # Remove vspace
     content = remove_command_with_braces(content, 'vspace')
@@ -470,16 +465,14 @@ def preprocess_content(content: str, extract_footnotes: bool = False) -> tuple:
     content = re.sub(r'\{\\scriptsize\s*Last updated:.*?\\today\s*\}', '', content, flags=re.DOTALL)
     content = re.sub(r'Last updated:\s*$', '', content, flags=re.MULTILINE)
 
-    if extract_footnotes:
-        return footnote, content
-    return content
+    return footnote, content
 
 
 def render_section_content(content: str, section_title: str) -> str:
     """Render section content to HTML based on section type."""
 
     # Extract footnote first (for display as note under section header)
-    footnote, content = preprocess_content(content, extract_footnotes=True)
+    footnote, content = preprocess_content(content)
 
     # Build HTML with optional footnote note
     html_prefix = ''

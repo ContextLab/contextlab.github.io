@@ -640,8 +640,10 @@ def photo_already_processed(photo_base: str, project_root: Path) -> bool:
             img.getpixel((0, h - 1)),
             img.getpixel((w - 1, h - 1)),
         ]
-        # All corners should be fully transparent (alpha == 0)
-        if not all(c[3] == 0 for c in corners):
+        # All corners should be fully transparent (alpha == 0). getpixel is
+        # typed as float | tuple | None for single-band images; mode is
+        # RGBA here, so each corner is a 4-tuple.
+        if not all(isinstance(c, tuple) and c[3] == 0 for c in corners):
             return False
 
         return True
@@ -1040,9 +1042,11 @@ def close_cv_entry(cv_path: Path, name: str, end_year: str) -> bool:
     # count=1: close the first open entry only. Closing every one at a stroke
     # would rewrite an unrelated second open entry for the same name, which is
     # never what a single role change means.
+    def close_range(m: "re.Match[str]") -> str:
+        return f"{m.group(1)}{end_year})"
+
     new_content, count = re.subn(
-        pattern, lambda m: f"{m.group(1)}{end_year})", content, count=1,
-        flags=re.IGNORECASE
+        pattern, close_range, content, count=1, flags=re.IGNORECASE
     )
     if count == 0:
         return False

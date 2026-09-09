@@ -33,7 +33,7 @@ def extract_people(html_path: Path) -> dict:
         role = name_parts[1].strip() if len(name_parts) > 1 else ''
 
         data['director'] = [{
-            'image': img.get('src', '').replace('images/people/', '') if img else '',
+            'image': attr_str(img, 'src').replace('images/people/', '') if img else '',
             'name': name,
             'role': role,
             'bio': ps[0].get_text(strip=True) if ps else '',
@@ -95,7 +95,7 @@ def extract_people(html_path: Path) -> dict:
             if link and p.get_text(strip=True):
                 collab = {
                     'name': link.get_text(strip=True),
-                    'url': link.get('href', ''),
+                    'url': attr_str(link, 'href'),
                     'description': p.get_text(strip=True)
                 }
                 collaborators.append(collab)
@@ -120,7 +120,7 @@ def extract_person_card(card) -> dict:
     if h3:
         link = h3.find('a')
         if link:
-            name_url = link.get('href', '')
+            name_url = attr_str(link, 'href')
 
         text = h3.get_text()
         if '|' in text:
@@ -131,7 +131,7 @@ def extract_person_card(card) -> dict:
             name = text.strip()
 
     return {
-        'image': img.get('src', '').replace('images/people/', '') if img else '',
+        'image': attr_str(img, 'src').replace('images/people/', '') if img else '',
         'name': name,
         'name_url': name_url,
         'role': role,
@@ -204,7 +204,7 @@ def extract_alumni_list(elem) -> list:
         # Get name - either from link or from text before parenthesis
         if name_link:
             alum['name'] = name_link.get_text(strip=True)
-            alum['name_url'] = name_link.get('href', '')
+            alum['name_url'] = attr_str(name_link, 'href')
         else:
             # No name link, name is text before (
             if paren_pos > 0:
@@ -214,7 +214,7 @@ def extract_alumni_list(elem) -> list:
 
         # Get position link URL if available
         if position_link:
-            alum['current_position_url'] = position_link.get('href', '')
+            alum['current_position_url'] = attr_str(position_link, 'href')
 
         # Parse years and current position from parenthesis
         paren_match = re.search(r'\(([^)]+)\)', full_text)
@@ -266,6 +266,20 @@ def extract_alumni_simple_list(elem) -> list:
             })
 
     return alumni
+
+
+def attr_str(tag: Any, name: str) -> str:
+    """Read a single-valued tag attribute as a string.
+
+    BeautifulSoup types attribute access as str | AttributeValueList | None,
+    because a multi-valued attribute such as class comes back as a list. The
+    attributes read here (src, href) are always single-valued, so join a list
+    rather than letting one leak into a field declared as text.
+    """
+    value = tag.get(name, '')
+    if isinstance(value, list):
+        return ' '.join(value)
+    return value or ''
 
 
 def get_inner_html(element) -> str:
