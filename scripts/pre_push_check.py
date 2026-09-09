@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Pre-push check script for the Context Lab website.
 
-Validates data files and rebuilds all HTML pages.
+Runs the same gates as .github/workflows/build-content.yml, in the same order:
+lint, type check, validate data, rebuild all HTML pages, run the test suite.
 This should be run before pushing to ensure consistency.
+
+Keep the steps here in step with that workflow. A local check that passes what
+CI rejects is worse than no local check, because it is trusted.
 """
 import subprocess
 import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).parent.parent
 
 
 def run_script(script_name: str) -> bool:
@@ -18,8 +24,27 @@ def run_script(script_name: str) -> bool:
 
     result = subprocess.run(
         [sys.executable, str(script_path)],
-        cwd=Path(__file__).parent.parent
+        cwd=PROJECT_ROOT
     )
+    return result.returncode == 0
+
+
+def run_command(label: str, cmd: list) -> bool:
+    """Run a command from the project root and return True if successful.
+
+    ruff and mypy read ruff.toml / mypy.ini there, so the invocation matches
+    both the workflow and what a contributor types by hand.
+    """
+    print(f"\n{'=' * 50}")
+    print(f"Running {label}...")
+    print('=' * 50)
+
+    try:
+        result = subprocess.run(cmd, cwd=PROJECT_ROOT)
+    except FileNotFoundError:
+        print(f"{cmd[0]} is not installed.")
+        print("Install the build dependencies: pip install -r requirements-build.txt")
+        return False
     return result.returncode == 0
 
 
@@ -44,17 +69,40 @@ def main():
     # Step 0: Check submodule
     check_submodule()  # Warning only, doesn't block
 
-    # Step 1: Validate data
-    if not run_script('validate_data.py'):
-        print("\n*** Data validation FAILED ***")
-        print("Fix validation errors before pushing.")
+    # Step 1: Lint. Before the build, because a script that fails this is one
+    # we should not be generating the site with.
+    if not run_command('ruff (lint)', ['ruff', 'check']):
+        print("\n*** Lint FAILED ***")
+        print("Fix the findings, or apply the auto-fixable subset: ruff check --fix")
         all_passed = False
 
-    # Step 2: Build all pages
+    # Step 2: Type check
+    if all_passed:
+        if not run_command('mypy (type check)', ['mypy']):
+            print("\n*** Type check FAILED ***")
+            print("Fix the type errors before pushing.")
+            all_passed = False
+
+    # Step 3: Validate data
+    if all_passed:
+        if not run_script('validate_data.py'):
+            print("\n*** Data validation FAILED ***")
+            print("Fix validation errors before pushing.")
+            all_passed = False
+
+    # Step 4: Build all pages
     if all_passed:
         if not run_script('build.py'):
             print("\n*** Build FAILED ***")
             print("Fix build errors before pushing.")
+            all_passed = False
+
+    # Step 5: Test suite
+    if all_passed:
+        if not run_command('pytest (test suite)',
+                           [sys.executable, '-m', 'pytest', 'tests/', '-q']):
+            print("\n*** Tests FAILED ***")
+            print("Fix the failing tests before pushing.")
             all_passed = False
 
     # Summary

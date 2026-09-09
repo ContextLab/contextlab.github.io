@@ -338,12 +338,16 @@ python scripts/pre_push_check.py
 
 ### Automatic Builds (GitHub Actions)
 
-When you push changes to `data/`, `templates/`, or `scripts/` on the `main` branch, GitHub Actions automatically:
+When you push changes to `data/`, `templates/`, `scripts/`, or `tests/` on the `main` branch, GitHub Actions automatically:
 
-1. Validates all spreadsheet data
-2. Rebuilds the HTML pages
-3. Runs the test suite (76 tests)
-4. Commits and pushes the regenerated HTML
+1. Lints the scripts with `ruff` (config in `ruff.toml`)
+2. Type checks them with `mypy` (config in `mypy.ini`)
+3. Validates all spreadsheet data
+4. Rebuilds the HTML pages
+5. Runs the test suite
+6. Commits and pushes the regenerated HTML
+
+Steps 1 and 2 run before the build, so a script that fails them never generates a page. `scripts/pre_push_check.py` runs the same six steps in the same order locally — keep the two in step, since a local check that passes what CI rejects is worse than none.
 
 You can also manually trigger a build from the [Actions tab](https://github.com/ContextLab/contextlab.github.io/actions).
 

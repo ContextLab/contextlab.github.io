@@ -15,6 +15,12 @@ beautifulsoup4>=4.12.0
 pytest>=7.4.0
 pytest-timeout>=2.2.0
 
+# Linting and type checking (build-content.yml gates on both; config lives in
+# ruff.toml and mypy.ini). Upper bounds are deliberate: both tools add rules in
+# minor releases, and an unpinned linter can turn CI red with no code change.
+ruff>=0.14.0,<0.15.0
+mypy>=1.19.0,<2.0.0
+
 # HTTP requests for URL validation tests
 requests>=2.31.0
 

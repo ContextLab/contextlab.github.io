@@ -8,7 +8,11 @@ on:
       - 'data/**'
       - 'templates/**'
       - 'scripts/**'
+      - 'tests/**'
       - 'documents/JRM_CV.tex'
+      - 'requirements-build.txt'
+      - 'ruff.toml'
+      - 'mypy.ini'
       - '.github/workflows/build-content.yml'
   pull_request:
     branches:
@@ -17,7 +21,11 @@ on:
       - 'data/**'
       - 'templates/**'
       - 'scripts/**'
+      - 'tests/**'
       - 'documents/JRM_CV.tex'
+      - 'requirements-build.txt'
+      - 'ruff.toml'
+      - 'mypy.ini'
       - '.github/workflows/build-content.yml'
   workflow_dispatch:  # Allow manual triggering
 
@@ -47,6 +55,16 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements-build.txt
+
+      # Lint and type-check before running any of it: a script that fails these
+      # is a script we should not be building the site with. Both read their
+      # config from ruff.toml / mypy.ini, so these commands match what a
+      # contributor runs locally.
+      - name: Lint (ruff)
+        run: ruff check
+
+      - name: Type check (mypy)
+        run: mypy
 
       - name: Validate data files
         working-directory: scripts

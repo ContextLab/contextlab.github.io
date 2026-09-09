@@ -27,7 +27,12 @@ python -m pytest tests/ -v
 # Run a single test file
 python -m pytest tests/test_build_publications.py -v
 
-# Pre-push validation (validation + build + tests)
+# Lint and type check (both gate build-content.yml; run from repo root)
+ruff check          # config in ruff.toml
+ruff check --fix    # apply the auto-fixable subset
+mypy                # config in mypy.ini
+
+# Pre-push validation (lint + type check + validation + build + tests)
 cd scripts && python pre_push_check.py
 
 # Local dev server
@@ -85,7 +90,7 @@ Each `build_*.py` follows the same pattern:
 
 ### GitHub Actions
 
-- **build-content.yml**: Triggers on changes to `data/`, `templates/`, `scripts/`. Validates, builds, runs tests, auto-commits regenerated HTML.
+- **build-content.yml**: Triggers on changes to `data/`, `templates/`, `scripts/`, `tests/`, `requirements-build.txt`, `ruff.toml`, or `mypy.ini`. Lints (`ruff check`), type checks (`mypy`), validates, builds, runs tests, auto-commits regenerated HTML. Lint and type check run *before* the build, so a script that fails them never generates a page.
 - **build-cv.yml**: Triggers on changes to `documents/JRM_CV.tex`, CV scripts, or `css/cv.css`. Compiles LaTeX, runs tests, auto-commits PDF+HTML.
 
 ## Critical Rules

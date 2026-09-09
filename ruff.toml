@@ -1,0 +1,8 @@
+# Match the interpreter CI uses so version-dependent rules agree with the
+# workflow. Selection is left at ruff's default (E4, E7, E9, F): pyflakes plus
+# the pycodestyle errors that indicate real problems rather than formatting.
+# This repo is not formatter-managed, so line-length rules stay off.
+target-version = "py311"
+
+# Checked by default, so a bare `ruff check` matches what build-content.yml runs.
+include = ["scripts/**/*.py", "tests/**/*.py"]
