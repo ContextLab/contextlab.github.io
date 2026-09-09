@@ -91,6 +91,8 @@ Each `build_*.py` follows the same pattern:
 ## Critical Rules
 
 - **Never edit auto-generated root HTML** (`publications.html`, `people.html`, `software.html`, `news.html`) — edit `data/*.xlsx` or `templates/*.html` instead
+- **Never edit the generated CV outputs** (`documents/JRM_CV.html`, `documents/JRM_CV.pdf`) — both are built from `documents/JRM_CV.tex` by `scripts/build_cv.py`
+- **Every generated file is produced by a build, never by hand.** After changing a source (`data/*.xlsx`, `templates/*.html`, `documents/JRM_CV.tex`), regenerate with `cd scripts && python build.py` and/or `python build_cv.py`, then commit the source *and* its regenerated output together. Any diff in a generated file must be reproducible by deleting it and re-running the build.
 - **Never use `!important`** in CSS without explicit justification
 - **Never add inline styles** to templates — use CSS classes
 - **Always run tests before pushing**: `python -m pytest tests/ -v`
