@@ -20,11 +20,9 @@ from build_people import (
     generate_member_card,
     generate_members_content,
     generate_alumni_entry,
-    generate_alumni_list_content,
     generate_undergrad_entry,
     generate_undergrad_list_content,
     generate_collaborator_entry,
-    generate_collaborators_content,
     build_people,
 )
 
@@ -592,7 +590,6 @@ class TestCvOrderingRobustness:
 
     def test_case_mismatch_still_lands_in_cv_position(self):
         """A name that differs only in case must not sort to the end."""
-        from build_people import generate_undergrad_list_content
 
         alumni = [
             {"name": "Zoe Zebra", "years": "2020 - 2021"},

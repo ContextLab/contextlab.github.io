@@ -23,7 +23,6 @@ from citation_utils import (
     format_dissertation_citation,
     format_talk_citation,
     format_poster_citation,
-    format_course_citation,
     markdown_to_html,
     resolve_link,
     build_links_html,

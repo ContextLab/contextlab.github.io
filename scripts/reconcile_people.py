@@ -10,12 +10,12 @@ import argparse
 import sys
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import List, Dict, Set, Optional, Tuple
+from typing import Any, List, Dict, Set, Optional, Tuple
 
 from utils import load_spreadsheet_all_sheets
-from parse_cv_trainees import parse_cv_trainees, get_active_trainees, get_alumni_trainees
+from parse_cv_trainees import parse_cv_trainees
 from parse_lab_manual import parse_members_chapter
-from sync_cv_people import normalize_name, NICKNAME_MAP, expand_nicknames, names_match
+from sync_cv_people import normalize_name, names_match
 
 PROJECT_ROOT = Path(__file__).parent.parent
 PEOPLE_XLSX = PROJECT_ROOT / 'data' / 'people.xlsx'
@@ -94,7 +94,7 @@ def get_lab_manual_names() -> Dict[str, Dict]:
     if not LAB_MANUAL_TEX.exists():
         return {}
     records = parse_members_chapter(LAB_MANUAL_TEX)
-    result = {}
+    result: Dict[str, Any] = {}
     for r in records:
         norm = normalize_name(r['name'])
         # Same person may appear multiple times (multi-role); keep the most recent

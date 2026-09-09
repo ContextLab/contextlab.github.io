@@ -6,7 +6,7 @@ invalid URLs, and missing image files.
 """
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 from utils import (
     load_spreadsheet_all_sheets,

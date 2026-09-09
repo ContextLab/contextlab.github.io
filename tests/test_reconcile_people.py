@@ -2,9 +2,7 @@
 import io
 import sys
 from difflib import SequenceMatcher
-from unittest.mock import patch
 
-import pytest
 
 from reconcile_people import (
     fuzzy_find,
@@ -16,7 +14,7 @@ from reconcile_people import (
     FUZZY_THRESHOLD,
     PERSON_SHEETS,
 )
-from sync_cv_people import normalize_name, names_match, NICKNAME_MAP
+from sync_cv_people import normalize_name, names_match
 
 
 class TestFuzzyFind:

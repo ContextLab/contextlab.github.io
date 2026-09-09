@@ -5,6 +5,7 @@ This is a one-time script to migrate existing HTML data to the spreadsheet forma
 """
 import re
 from pathlib import Path
+from typing import Any, Dict
 from bs4 import BeautifulSoup
 import openpyxl
 
@@ -23,7 +24,7 @@ def extract_software(html_path: Path) -> dict:
         'matlab': 'matlab'
     }
 
-    data = {}
+    data: Dict[str, Any] = {}
 
     for key, section_id in sections.items():
         section = soup.find('section', id=section_id)

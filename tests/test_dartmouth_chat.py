@@ -5,7 +5,6 @@ DARTMOUTH_CHAT_API_KEY is absent, which is the case for anyone who has not set
 one up; CI supplies it from the repository secret, so the calling method and
 the response shape are verified on every change.
 """
-import os
 import sys
 from pathlib import Path
 

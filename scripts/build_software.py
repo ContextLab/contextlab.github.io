@@ -18,7 +18,7 @@ from typing import List, Dict, Any
 import openpyxl
 
 from utils import inject_content
-from citation_utils import markdown_to_html, resolve_link, build_links_html
+from citation_utils import markdown_to_html, build_links_html
 
 
 def load_software(xlsx_path: Path) -> Dict[str, List[Dict[str, Any]]]:

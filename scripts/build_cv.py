@@ -65,7 +65,7 @@ FONT_FAILURE_PATTERNS = [
 ]
 
 
-def run_command(cmd: list, cwd: Path = None, timeout: int = 120) -> tuple:
+def run_command(cmd: list, cwd: Optional[Path] = None, timeout: int = 120) -> tuple:
     """Run a command and return (success, stdout, stderr)."""
     try:
         result = subprocess.run(

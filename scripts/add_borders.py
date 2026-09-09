@@ -20,9 +20,9 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Optional
 from PIL import Image
 import numpy as np
-import io
 
 # Register HEIC/HEIF support so Pillow can open .heic files
 try:
@@ -95,17 +95,15 @@ def resize_to_max_dimension(img: Image.Image, max_size: int = MAX_INPUT_DIMENSIO
 def get_face_detector():
     """Get or create a mediapipe face detector (cached)."""
     if not hasattr(get_face_detector, '_detector'):
-        import mediapipe as mp
         from mediapipe.tasks import python as mp_python
         from mediapipe.tasks.python import vision
         import urllib.request
-        import os
 
         # Download the face detection model if not present
         model_path = Path(__file__).parent / 'blaze_face_short_range.tflite'
         if not model_path.exists():
             url = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite"
-            print(f"    Downloading face detection model...")
+            print("    Downloading face detection model...")
             urllib.request.urlretrieve(url, str(model_path))
 
         # Create face detector
@@ -441,7 +439,7 @@ def process_images(
     svg_path: Path,
     output_size: int = OUTPUT_SIZE,
     use_face_detection: bool = False,
-    seed: int = None
+    seed: Optional[int] = None
 ) -> None:
     """Process images, adding borders after optional crop and resize.
 
@@ -482,7 +480,7 @@ def process_images(
         print(f"  Processing {img_path.name}...")
 
         # Load image
-        img = Image.open(img_path)
+        img: Image.Image = Image.open(img_path)
         if img.mode != 'RGBA':
             img = img.convert('RGBA')
 

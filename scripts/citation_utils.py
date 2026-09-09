@@ -8,8 +8,7 @@ Provides functions to:
 - Build link HTML from URLs or local file paths
 """
 import re
-from typing import Optional, List, Tuple
-from pathlib import Path
+from typing import List, Tuple
 
 # GitHub repository URL for the project
 GITHUB_REPO_URL = "https://github.com/ContextLab/contextlab.github.io/blob/main"

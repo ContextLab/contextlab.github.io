@@ -36,6 +36,14 @@ from pathlib import Path
 from typing import Optional, Tuple, Dict, Any, List
 
 import openpyxl
+# Bios are rewritten by Dartmouth's own LLM service. See dartmouth_chat.py.
+#
+# This replaces a local mlx-lm setup that downloaded an 18GB Qwen2.5-32B into
+# ~/.cache/cdl/llm-venv and ran it on device. mlx-lm is Apple-Silicon only, so
+# that path could never work for the lab's Windows and Linux members -- the
+# same people issue #14 was about. The hosted service costs the lab nothing,
+# needs no download, and answers in about a second.
+from dartmouth_chat import DartmouthChatError, chat as dartmouth_chat
 
 # =============================================================================
 # Constants
@@ -422,15 +430,6 @@ def share_google_calendars(email: str, rank: str) -> bool:
     return success
 
 
-# Bios are rewritten by Dartmouth's own LLM service. See dartmouth_chat.py.
-#
-# This replaces a local mlx-lm setup that downloaded an 18GB Qwen2.5-32B into
-# ~/.cache/cdl/llm-venv and ran it on device. mlx-lm is Apple-Silicon only, so
-# that path could never work for the lab's Windows and Linux members -- the
-# same people issue #14 was about. The hosted service costs the lab nothing,
-# needs no download, and answers in about a second.
-from dartmouth_chat import DartmouthChatError, chat as dartmouth_chat
-
 
 def _clean_bio(text: str) -> str:
     """Strip the wrapping a chat model puts around a one-line answer."""
@@ -658,7 +657,7 @@ def process_photo(
 
     add_borders_script = project_root / "scripts" / "add_borders.py"
 
-    print(f"  Processing photo with face detection...")
+    print("  Processing photo with face detection...")
     result = subprocess.run(
         [
             sys.executable,
@@ -1171,7 +1170,7 @@ def onboard_member(
     alumni_entry = find_alumni_entry(xlsx_path, name)
     is_reactivation = alumni_entry is not None
 
-    if is_reactivation:
+    if alumni_entry is not None:
         print(f"  Found {name} in {alumni_entry['sheet']} - reactivating...")
         remove_from_alumni(xlsx_path, alumni_entry)
 
@@ -1198,7 +1197,7 @@ def onboard_member(
     if bio is None:
         existing_bio = get_existing_bio(xlsx_path, name)
         if existing_bio:
-            print(f"  Using existing bio from spreadsheet")
+            print("  Using existing bio from spreadsheet")
             bio = existing_bio
 
     if not skip_llm:
@@ -1243,7 +1242,7 @@ def onboard_member(
                     project_root / 'lab-manual',
                     f"Onboard {name}"
                 )
-                print(f"  Updated lab-manual and pushed to remote")
+                print("  Updated lab-manual and pushed to remote")
             except RuntimeError as e:
                 print(f"  WARNING: Lab-manual updated locally but push failed: {e}")
         else:

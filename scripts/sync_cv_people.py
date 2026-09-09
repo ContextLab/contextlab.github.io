@@ -4,14 +4,12 @@
 Compares trainees in JRM_CV.tex with data/people.xlsx and generates
 a sync report with recommendations. Can also apply updates.
 """
-import re
 from pathlib import Path
-from typing import List, Dict, Any, Set, Tuple, Optional
+from typing import List, Dict, Any, Set, Optional
 from dataclasses import dataclass
 import openpyxl
-from openpyxl.utils import get_column_letter
 
-from parse_cv_trainees import parse_cv_trainees, Trainee, get_active_trainees
+from parse_cv_trainees import parse_cv_trainees, Trainee
 
 
 @dataclass
@@ -452,7 +450,7 @@ def print_sync_report(actions: List[SyncAction]) -> None:
     if add_to_ss:
         print(f"\n--- ADD TO SPREADSHEET ({len(add_to_ss)} entries) ---")
         # Group by target sheet
-        by_sheet = {}
+        by_sheet: Dict[str, List[Any]] = {}
         for a in add_to_ss:
             by_sheet.setdefault(a.target, []).append(a)
 
@@ -506,9 +504,6 @@ def apply_spreadsheet_updates(
             continue
 
         ws = wb[sheet_name]
-
-        # Get headers
-        headers = [cell.value for cell in ws[1]]
 
         # Build new row based on sheet type
         if sheet_name == 'members':

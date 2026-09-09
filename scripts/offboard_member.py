@@ -21,7 +21,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 
 import openpyxl
 
@@ -85,7 +85,7 @@ def prompt_for_selection(matches: List[Dict[str, Any]]) -> Optional[Dict[str, An
         has_photo = "has photo" if image else "NO PHOTO"
         print(f"  {i}. {m['name']} ({role}) [{has_photo}]")
 
-    print(f"  0. Cancel")
+    print("  0. Cancel")
 
     while True:
         try:
@@ -235,6 +235,7 @@ def offboard_member(
         print(f"No active members found matching '{search_name}'")
         return False
 
+    member: Optional[Dict[str, Any]]
     if len(matches) == 1:
         member = matches[0]
         print(f"\nFound: {member['name']} ({member.get('role', 'unknown role')})")
@@ -278,7 +279,7 @@ def offboard_member(
                     project_root / 'lab-manual',
                     f"Offboard {member['name']}"
                 )
-                print(f"  Updated lab-manual and pushed to remote")
+                print("  Updated lab-manual and pushed to remote")
             except RuntimeError as e:
                 print(f"  WARNING: Lab-manual updated locally but push failed: {e}")
         else:

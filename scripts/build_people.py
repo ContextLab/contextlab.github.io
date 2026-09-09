@@ -437,7 +437,7 @@ def generate_undergrad_list_content(
     # agree on capitalization (e.g. "Evan Mcdermid" vs "Evan McDermid"), and
     # an exact-match miss silently drops that person to the end of their
     # cohort instead of their CV position.
-    cv_position = {}
+    cv_position: Dict[str, int] = {}
     if cv_order:
         for i, name in enumerate(cv_order):
             cv_position.setdefault(name.casefold(), i)

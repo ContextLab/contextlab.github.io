@@ -5,6 +5,7 @@ This is a one-time script to migrate existing HTML data to the spreadsheet forma
 """
 import re
 from pathlib import Path
+from typing import Any, Dict, List
 from bs4 import BeautifulSoup
 import openpyxl
 
@@ -146,7 +147,7 @@ def extract_alumni_list(elem) -> list:
     - Gina Notaro (2017-2018; now at <a>Lockheed Martin</a>)
     - <a>Andrew Heusser</a> (2016-2018; now at <a>Akili</a>)
     """
-    alumni = []
+    alumni: List[Dict[str, Any]] = []
     if not elem:
         return alumni
 
@@ -237,7 +238,7 @@ def extract_alumni_list(elem) -> list:
 
 def extract_alumni_simple_list(elem) -> list:
     """Extract simple alumni list (just names and years)."""
-    alumni = []
+    alumni: List[Dict[str, Any]] = []
     if not elem:
         return alumni
 

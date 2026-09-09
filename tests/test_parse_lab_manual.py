@@ -1,6 +1,5 @@
 """Tests for parse_lab_manual.py."""
 import re
-import tempfile
 import textwrap
 from pathlib import Path
 

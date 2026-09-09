@@ -268,7 +268,7 @@ def parse_cv_trainees(cv_path: Path) -> Dict[str, List[Trainee]]:
     with open(cv_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    trainees = {
+    trainees: Dict[str, Any] = {
         'postdocs': [],
         'grads': [],
         'undergrads': []

@@ -8,7 +8,7 @@ and produces HTML that matches the PDF formatting exactly.
 
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 from dataclasses import dataclass, field
 
 

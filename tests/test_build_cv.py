@@ -28,10 +28,7 @@ from extract_cv import (
 
 from build_cv import (
     run_command,
-    compile_pdf,
-    compile_html,
     cleanup_temp_files,
-    validate_output,
     build_cv,
     PDF_FILE,
     TEX_FILE,

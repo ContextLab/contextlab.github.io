@@ -59,7 +59,6 @@ def main():
 
     # Get headers
     member_headers = [cell.value for cell in ws_members[1]]
-    alumni_headers = [cell.value for cell in ws_alumni[1]]
 
     # Read current members
     current_rows = []
@@ -133,14 +132,14 @@ def main():
     print(f"\nSaved changes to {xlsx_path}")
 
     # Print summary
-    print(f"\n=== Summary ===")
+    print("\n=== Summary ===")
     print(f"Active members: {len(current_rows)}")
     print(f"Moved to alumni: {len(rows_to_move_to_alumni)}")
 
     # Print new members that need CV additions
     new_members = [name for name, info in CURRENT_MEMBERS.items() if info.get('new')]
     if new_members:
-        print(f"\n=== New members to add to CV ===")
+        print("\n=== New members to add to CV ===")
         for name in sorted(new_members):
             print(f"  - {name.title()}")
 
