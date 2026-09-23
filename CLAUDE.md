@@ -95,6 +95,8 @@ People appear in `data/people.xlsx`, `documents/JRM_CV.tex` and `lab-manual/lab_
 
 `documents/JRM_CV.tex` → `scripts/build_cv.py` + `scripts/extract_cv.py` (custom LaTeX→HTML parser) → `documents/JRM_CV.pdf` + `documents/JRM_CV.html`
 
+The PDF build is reproducible: `build_cv.py` runs xelatex with `SOURCE_DATE_EPOCH` set to JRM_CV.tex's last commit time (its modification time while it has uncommitted edits), so rebuilding unchanged source gives identical bytes and the CV's "Last updated" date is the date the source last changed. A different TeX installation (e.g. CI's Ubuntu TeX Live) can still produce different bytes, which is why CI commits its own PDF.
+
 ### GitHub Actions
 
 - **build-content.yml**: Triggers on changes to `data/`, `templates/`, `scripts/`, `tests/`, `requirements-build.txt`, `ruff.toml`, or `mypy.ini`. Lints (`ruff check`), type checks (`mypy`), validates, builds, runs tests, auto-commits regenerated HTML. Lint and type check run *before* the build, so a script that fails them never generates a page.

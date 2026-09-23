@@ -27,6 +27,7 @@ from extract_cv import (
 )
 
 from build_cv import (
+    source_date_epoch,
     run_command,
     cleanup_temp_files,
     build_cv,
@@ -1309,3 +1310,50 @@ class TestThresholdValues:
         assert build_cv.count_pdf_pages(healthy_log['pdf']) >= build_cv.MIN_PDF_PAGES
         assert (build_cv.count_pdf_text_operators(healthy_log['pdf'])
                 >= build_cv.MIN_TEXT_OPERATORS)
+
+
+class TestReproducibleBuild:
+    """Same source, same bytes: the PDF used to differ on every build (embedded
+    timestamps), so CI's auto-commit conflicted with any newer push that also
+    carried a rebuilt PDF."""
+
+    def test_epoch_is_the_last_commit_of_a_clean_tex(self):
+        status = subprocess.run(
+            ['git', 'status', '--porcelain', '--', str(TEX_FILE)],
+            capture_output=True, text=True, cwd=TEX_FILE.parent,
+        )
+        if status.returncode != 0:
+            pytest.skip("not a git checkout")
+        if status.stdout.strip():
+            pytest.skip("JRM_CV.tex has uncommitted edits")
+        committed = subprocess.run(
+            ['git', 'log', '-1', '--format=%ct', '--', str(TEX_FILE)],
+            capture_output=True, text=True, cwd=TEX_FILE.parent,
+        ).stdout.strip()
+        assert source_date_epoch(TEX_FILE) == committed
+
+    def test_epoch_falls_back_to_mtime_outside_git(self, tmp_path):
+        tex = tmp_path / 'JRM_CV.tex'
+        tex.write_text('x', encoding='utf-8')
+        import os
+        os.utime(tex, (1700000000, 1700000000))
+        assert source_date_epoch(tex) == '1700000000'
+
+    def test_two_builds_are_byte_identical(self):
+        if not TEX_FILE.exists():
+            pytest.skip("JRM_CV.tex not found")
+        if subprocess.run(['which', 'xelatex'], capture_output=True).returncode != 0:
+            pytest.skip("xelatex not available")
+        import shutil
+        backup = PDF_FILE.with_suffix('.pdf.repro-backup')
+        html_backup = HTML_FILE.with_suffix('.html.repro-backup')
+        shutil.copy(PDF_FILE, backup)
+        shutil.copy(HTML_FILE, html_backup)
+        try:
+            assert build_cv()
+            first = PDF_FILE.read_bytes()
+            assert build_cv()
+            assert PDF_FILE.read_bytes() == first
+        finally:
+            shutil.move(backup, PDF_FILE)
+            shutil.move(html_backup, HTML_FILE)

@@ -8,6 +8,7 @@ This script:
 3. Cleans up temporary LaTeX build files
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -65,7 +66,12 @@ FONT_FAILURE_PATTERNS = [
 ]
 
 
-def run_command(cmd: list, cwd: Optional[Path] = None, timeout: int = 120) -> tuple:
+def run_command(
+    cmd: list,
+    cwd: Optional[Path] = None,
+    timeout: int = 120,
+    env: Optional[dict] = None,
+) -> tuple:
     """Run a command and return (success, stdout, stderr)."""
     try:
         result = subprocess.run(
@@ -73,13 +79,42 @@ def run_command(cmd: list, cwd: Optional[Path] = None, timeout: int = 120) -> tu
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            env=env,
         )
         return result.returncode == 0, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
         return False, '', f'Command timed out after {timeout}s'
     except Exception as e:
         return False, '', str(e)
+
+
+def source_date_epoch(tex_path: Path = TEX_FILE) -> str:
+    """The timestamp xelatex stamps into the CV, as SOURCE_DATE_EPOCH.
+
+    Without it every build embeds the current time (creation date, document
+    ID), so rebuilding unchanged source still changed JRM_CV.pdf. CI's
+    auto-commit of that PDF then conflicted with any newer push that carried
+    its own rebuilt PDF. With FORCE_SOURCE_DATE it also sets \\today, so the
+    CV's "Last updated" line is the date JRM_CV.tex last changed: its last
+    commit when committed, its modification time while it has unsaved edits.
+    """
+    try:
+        cwd = tex_path.parent
+        status = subprocess.run(
+            ['git', 'status', '--porcelain', '--', str(tex_path)],
+            cwd=cwd, capture_output=True, text=True, check=True,
+        )
+        if not status.stdout.strip():
+            committed = subprocess.run(
+                ['git', 'log', '-1', '--format=%ct', '--', str(tex_path)],
+                cwd=cwd, capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            if committed:
+                return committed
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return str(int(tex_path.stat().st_mtime))
 
 
 def iter_pdf_streams(data: bytes):
@@ -205,12 +240,19 @@ def compile_pdf() -> Tuple[bool, dict]:
                 encoding='utf-8', errors='replace'
             )
 
+    env = {
+        **os.environ,
+        'SOURCE_DATE_EPOCH': source_date_epoch(TEX_FILE),
+        'FORCE_SOURCE_DATE': '1',
+    }
+
     # Run xelatex twice for references
     for i in range(2):
         success, stdout, stderr = run_command(
             ['xelatex', '-interaction=nonstopmode', TEX_FILE.name],
             cwd=DOCUMENTS_DIR,
-            timeout=120
+            timeout=120,
+            env=env,
         )
         capture()
 
