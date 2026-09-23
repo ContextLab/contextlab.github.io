@@ -498,10 +498,24 @@ class TestEntryPointConsistency:
                 pytest.skip(f"{required.name} not found")
 
         with tempfile.TemporaryDirectory() as td:
+            # The real spreadsheet is kept in CV order, so a build without the
+            # CV would match anyway. Reverse every alumni sheet in a copy so the
+            # spreadsheet order is guaranteed to differ from the CV's.
+            reversed_data = Path(td) / "people.xlsx"
+            wb = openpyxl.load_workbook(data_path)
+            for ws in wb.worksheets:
+                if not ws.title.startswith("alumni_"):
+                    continue
+                rows = [list(r) for r in ws.iter_rows(min_row=2, values_only=True)]
+                ws.delete_rows(2, ws.max_row)
+                for row in reversed(rows):
+                    ws.append(row)
+            wb.save(reversed_data)
+
             with_cv = Path(td) / "with_cv.html"
             without_cv = Path(td) / "without_cv.html"
-            build_people(data_path, template_path, with_cv, cv_path)
-            build_people(data_path, template_path, without_cv)
+            build_people(reversed_data, template_path, with_cv, cv_path)
+            build_people(reversed_data, template_path, without_cv)
 
             assert with_cv.read_text(encoding="utf-8") != without_cv.read_text(
                 encoding="utf-8"

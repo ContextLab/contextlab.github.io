@@ -906,7 +906,12 @@ class TestRealManualStaysBuildable:
         assert_environments_balanced(real_copy)
 
     def test_offboarding_a_real_member_keeps_it_balanced(self, real_copy):
-        move_member_to_alumni(real_copy, 'Ansh Patel', 2026)
+        # Whoever is a current undergrad in the real file today; a fixed name
+        # stops being current as soon as that person is offboarded.
+        current = [r['name'] for r in parse_members_chapter(real_copy)
+                   if r['is_active'] and r['role_category'] == 'Undergraduate RAs']
+        assert current, "real lab manual lists no current undergrads"
+        move_member_to_alumni(real_copy, current[0], 2026)
         assert_environments_balanced(real_copy)
 
     def test_a_full_round_trip_keeps_it_balanced(self, real_copy):
