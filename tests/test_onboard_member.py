@@ -264,6 +264,19 @@ class TestAddToCv:
         assert add_to_cv(real_cv, 'Brand New', 'undergrad', '2026') is True
         assert find_cv_section(real_cv, 'Brand New') == 'undergrad'
 
+    def test_new_undergrad_lands_in_name_order_within_its_year(self, cv_file):
+        # Onboarding used to put every new member at the top of the list.
+        add_to_cv(cv_file, 'Zed Zulu', 'undergrad', '2026')
+        order = re.findall(r'\\item\s+([^(]+?)\*?\s*\(', cv_file.read_text(encoding='utf-8'))
+        undergrads = order[order.index('Neui Wadwalai'):]
+        assert undergrads[:3] == ['Neui Wadwalai', 'Zed Zulu', 'Rising Star']
+
+    def test_new_grad_lands_by_start_year(self, cv_file):
+        add_to_cv(cv_file, 'Mid Career', 'grad student', '2020')
+        content = cv_file.read_text(encoding='utf-8')
+        assert (content.index('Claudia Gonciulea') < content.index('Mid Career')
+                < content.index('Caroline Lee'))
+
 
 class TestFindCvSection:
     def test_locates_each_section(self, cv_file):

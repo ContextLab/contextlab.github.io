@@ -44,6 +44,7 @@ import openpyxl
 # same people issue #14 was about. The hosted service costs the lab nothing,
 # needs no download, and answers in about a second.
 from dartmouth_chat import DartmouthChatError, chat as dartmouth_chat
+from people_order import insert_item_sorted
 
 # =============================================================================
 # Constants
@@ -1090,8 +1091,10 @@ def add_to_cv(cv_path: Path, name: str, role: str, year: str) -> bool:
         return False
 
     entry = section["entry"].format(name=name, year=year)
-    insert_pos = match.end()
-    new_content = content[:insert_pos] + f"\n  {entry}" + content[insert_pos:]
+    list_start = match.end()
+    list_end = content.index("\\end{etaremune}", list_start)
+    items = insert_item_sorted(content[list_start:list_end], entry, name, year)
+    new_content = content[:list_start] + items + content[list_end:]
 
     cv_path.write_text(new_content, encoding="utf-8")
     print(f"  Added {name} to CV under {section['label']}")

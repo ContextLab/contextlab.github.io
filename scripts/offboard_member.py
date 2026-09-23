@@ -27,6 +27,7 @@ from typing import List, Dict, Any, Optional
 import openpyxl
 
 from onboard_member import rebuild_pages
+from people_order import order_key
 
 
 def get_project_root() -> Path:
@@ -105,8 +106,18 @@ def prompt_for_selection(matches: List[Dict[str, Any]]) -> Optional[Dict[str, An
             print("Please enter a valid number")
 
 
-def move_to_alumni(xlsx_path: Path, member: Dict[str, Any], years_string: str) -> bool:
-    """Move member to alumni sheet with the given years string (e.g., '2024-2026' or '2026')."""
+def move_to_alumni(
+    xlsx_path: Path,
+    member: Dict[str, Any],
+    years_string: str,
+    display_name: Optional[str] = None,
+) -> bool:
+    """Move member to alumni sheet with the given years string (e.g., '2024-2026' or '2026').
+
+    The row goes at its sorted position (newest start year first, then name;
+    see people_order.py) under display_name -- the CV's spelling -- falling
+    back to a title-cased spreadsheet name.
+    """
     if member_already_alumni(xlsx_path, member["name"]):
         print(
             f"  {member['name']} is already in alumni list, skipping spreadsheet update"
@@ -119,15 +130,35 @@ def move_to_alumni(xlsx_path: Path, member: Dict[str, Any], years_string: str) -
     members_sheet.delete_rows(member["_row_idx"])
 
     alumni_sheet = wb["alumni_undergrads"]
+    name = display_name or member["name"].title()
+    key = order_key(name, years_string[:4])
 
-    alumni_sheet.insert_rows(2)
-    alumni_sheet.cell(row=2, column=1, value=member["name"].title())
-    alumni_sheet.cell(row=2, column=2, value=years_string)
+    row = alumni_sheet.max_row + 1
+    for r in range(2, alumni_sheet.max_row + 1):
+        existing, years = (alumni_sheet.cell(r, c).value for c in (1, 2))
+        start = re.search(r"\d{4}", str(years or ""))
+        if existing and start and order_key(existing, start.group(0)) > key:
+            row = r
+            break
+
+    alumni_sheet.insert_rows(row)
+    alumni_sheet.cell(row=row, column=1, value=name)
+    alumni_sheet.cell(row=row, column=2, value=years_string)
 
     wb.save(xlsx_path)
     wb.close()
     print(f"  Moved {member['name']} to alumni_undergrads with years {years_string}")
     return True
+
+
+def get_cv_display_name(cv_path: Path, member_name: str) -> Optional[str]:
+    """The member's name as the CV spells it ('Miles McDonald'), without the
+    thesis asterisk; the spreadsheet stores names lowercase."""
+    content = cv_path.read_text(encoding="utf-8")
+    match = re.search(
+        r"\\item\s+(" + re.escape(member_name) + r")\*?\s*\(", content, re.IGNORECASE
+    )
+    return match.group(1) if match else None
 
 
 def get_cv_start_year(cv_path: Path, member_name: str) -> Optional[str]:
@@ -270,7 +301,9 @@ def offboard_member(
     else:
         years_string = end_year
 
-    move_to_alumni(xlsx_path, member, years_string)
+    move_to_alumni(
+        xlsx_path, member, years_string, get_cv_display_name(cv_path, member["name"])
+    )
     update_cv_entry(cv_path, member["name"], end_year)
 
     # Update lab-manual (best-effort; failure doesn't block offboarding)

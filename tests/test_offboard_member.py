@@ -100,3 +100,34 @@ class TestOffboardRebuilds:
         assert result.returncode == 0, out
         assert "Rebuilding" not in out
         assert (sandbox / "people.html").read_text(encoding="utf-8") == before
+
+
+class TestSpreadsheetAlumniOrder:
+    def test_new_alumnus_row_keeps_the_sheet_in_order(self, sandbox):
+        from people_order import order_key
+
+        name, display, start, _ = first_open_undergrad(sandbox)
+        result = run_offboard(sandbox, name, "-y", "--end-year", "2099", "--skip-rebuild")
+        assert result.returncode == 0, result.stdout + result.stderr
+
+        ws = openpyxl.load_workbook(sandbox / "data" / "people.xlsx")["alumni_undergrads"]
+        rows = [(r[0], str(r[1])) for r in ws.iter_rows(min_row=2, values_only=True) if r[0]]
+        keys = [order_key(n, re.search(r"\d{4}", y).group(0)) for n, y in rows]
+        assert keys == sorted(keys)
+        # Written with the CV's spelling of the name, not str.title() of the
+        # spreadsheet's lowercase one.
+        assert (display, f"{start}-2099") in rows
+
+    def test_name_uses_the_cvs_capitalization(self, sandbox):
+        # str.title() turns 'mcdonald' into 'Mcdonald'; the CV says McDonald.
+        ws = openpyxl.load_workbook(sandbox / "data" / "people.xlsx")["members"]
+        names = [r[1] for r in ws.iter_rows(min_row=2, values_only=True) if r[1]]
+        if "miles mcdonald" not in names:
+            pytest.skip("Miles McDonald is no longer a current member")
+        result = run_offboard(sandbox, "miles mcdonald", "-y", "--end-year", "2099",
+                              "--skip-rebuild")
+        assert result.returncode == 0, result.stdout + result.stderr
+        ws = openpyxl.load_workbook(sandbox / "data" / "people.xlsx")["alumni_undergrads"]
+        alumni = [r[0] for r in ws.iter_rows(min_row=2, values_only=True) if r[0]]
+        assert "Miles McDonald" in alumni
+        assert "Miles Mcdonald" not in alumni

@@ -8,6 +8,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from people_order import insert_item_sorted
+
 
 def parse_members_chapter(tex_path):
     """Extract all member/alumni entries from lab_manual.tex.
@@ -365,9 +367,9 @@ def add_member_to_lab_manual(tex_path, name, role, start_year):
         if _has_item(match.group(2), name):
             return False
 
-        before = match.group(1) + match.group(2).rstrip()
+        items = insert_item_sorted(match.group(2), new_item, name, start_year)
         new_section = (
-            section[:match.start()] + before + '\n' + new_item + '\n'
+            section[:match.start()] + match.group(1) + items
             + match.group(3) + section[match.end():]
         )
 
@@ -441,10 +443,12 @@ def move_member_to_alumni(tex_path, name, end_year):
     if not alumni_block:
         new_alumni = _insert_role_block(alumni_section, role_category, alumni_item)
     else:
-        before = alumni_block.group(1) + alumni_block.group(2).rstrip()
+        items = insert_item_sorted(
+            alumni_block.group(2), alumni_item, manual_name, start_year
+        )
         new_alumni = (
-            alumni_section[:alumni_block.start()] + before + '\n' + alumni_item
-            + '\n' + alumni_block.group(3) + alumni_section[alumni_block.end():]
+            alumni_section[:alumni_block.start()] + alumni_block.group(1) + items
+            + alumni_block.group(3) + alumni_section[alumni_block.end():]
         )
 
     content = content[:alumni_start] + new_alumni + content[alumni_end:]

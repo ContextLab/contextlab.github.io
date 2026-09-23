@@ -270,6 +270,21 @@ class TestAddMember:
         assert roles == {'Undergraduate RAs', 'Graduate Students'}
 
 
+class TestAddMemberOrder:
+    def test_new_member_lands_in_start_year_order(self, tex_file):
+        # Onboarding used to append at the end of the role's list. A 2022
+        # 'Aaron' sorts before Alice Smith (2022 -- ), the same year.
+        add_member_to_lab_manual(tex_file, 'Aaron Able', 'grad student', 2022)
+        content = tex_file.read_text(encoding='utf-8')
+        current = content[:content.index(r'\subsection{Lab alumni}')]
+        assert current.index('Aaron Able') < current.index('Alice Smith')
+
+    def test_newest_member_goes_first(self, tex_file):
+        add_member_to_lab_manual(tex_file, 'Zoe Zed', 'grad student', 2026)
+        content = tex_file.read_text(encoding='utf-8')
+        assert content.index('Zoe Zed') < content.index('Alice Smith')
+
+
 class TestMoveMember:
     def test_moves_to_alumni(self, tex_file):
         move_member_to_alumni(tex_file, 'Alice Smith', 2026)
@@ -293,6 +308,15 @@ class TestMoveMember:
         content = tex_file.read_text(encoding='utf-8')
         assert r'\item Alice Smith (2022 -- 2026)' in content
         assert 'alice smith' not in content
+
+    def test_alumni_entry_lands_in_order_not_at_the_end(self, tex_file):
+        # Eve Black (2020 -- 2021) and Frank Green (2019) are already alumni;
+        # Charlie Brown started in 2024, so he goes first, not last.
+        move_member_to_alumni(tex_file, 'Charlie Brown', 2026)
+        content = tex_file.read_text(encoding='utf-8')
+        alumni = content[content.index(r'\subsection{Lab alumni}'):]
+        assert (alumni.index('Charlie Brown') < alumni.index('Eve Black')
+                < alumni.index('Frank Green'))
 
     def test_same_year_range_collapses_to_one_year(self, tex_file):
         # The manual writes a one-year stint as '(2019)', not '(2019 -- 2019)'.
