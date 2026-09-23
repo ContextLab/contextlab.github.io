@@ -35,3 +35,9 @@ mediapipe>=0.10.0
 
 # Browser automation for visual tests
 selenium>=4.15.0
+
+# Google Calendar sharing in onboard_member.py. google-api-core needs
+# Python >= 3.10: on 3.9 its version check prints "An error occurred:
+# module 'importlib.metadata' has no attribute 'packages_distributions'".
+google-api-python-client>=2.100.0
+google-auth>=2.23.0

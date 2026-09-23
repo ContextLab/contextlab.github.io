@@ -9,8 +9,9 @@ Static website for the Contextual Dynamics Lab at Dartmouth College. Hosted on G
 ## Commands
 
 ```bash
-# Install dependencies
-pip install -r requirements-build.txt
+# Install dependencies (Python >= 3.10; CI uses 3.11. The Google Calendar
+# client prints an importlib.metadata error on 3.9)
+uv venv --python 3.11 .venv && VIRTUAL_ENV=.venv uv pip install -r requirements-build.txt
 
 # Validate spreadsheet data
 cd scripts && python validate_data.py
