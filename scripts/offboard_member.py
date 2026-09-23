@@ -6,7 +6,8 @@ This script:
 2. Prompts for selection if multiple matches found
 3. Moves member from 'members' sheet to 'alumni_undergrads' sheet
 4. Updates JRM_CV.tex to add end date to the member's entry
-5. Rebuilds people.html
+5. Moves them to alumni in the lab-manual submodule and pushes it
+6. Rebuilds people.html and the CV (skip with --skip-rebuild)
 
 Idempotent: Running twice with same name will detect already-offboarded member.
 
@@ -24,6 +25,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 import openpyxl
+
+from onboard_member import rebuild_pages
 
 
 def get_project_root() -> Path:
@@ -213,7 +216,10 @@ def list_undergrads_without_photos(xlsx_path: Path) -> None:
 
 
 def offboard_member(
-    search_name: str, end_year: Optional[str] = None, skip_confirm: bool = False
+    search_name: str,
+    end_year: Optional[str] = None,
+    skip_confirm: bool = False,
+    skip_rebuild: bool = False,
 ) -> bool:
     project_root = get_project_root()
     xlsx_path = project_root / "data" / "people.xlsx"
@@ -287,9 +293,13 @@ def offboard_member(
     except Exception as e:
         print(f"  WARNING: Could not update lab-manual: {e}")
 
-    print(f"\nSuccessfully offboarded {member['name']}")
-    print("Run 'python build.py' to rebuild people.html")
+    # Same rebuild onboarding runs, so neither script leaves people.html or
+    # the CV PDF/HTML stale behind the sources it just edited.
+    if not skip_rebuild and not rebuild_pages(project_root):
+        print(f"\nOffboarded {member['name']} in the sources, but a rebuild failed (see above)")
+        return False
 
+    print(f"\nSuccessfully offboarded {member['name']}")
     return True
 
 
@@ -303,6 +313,7 @@ Examples:
     python offboard_member.py "john" --end-year 2024
     python offboard_member.py --list-no-photo
     python offboard_member.py "jane" -y  # Skip confirmation
+    python offboard_member.py "jane" -y --skip-rebuild  # Batch; build once after
         """,
     )
 
@@ -316,6 +327,11 @@ Examples:
     )
     parser.add_argument(
         "-y", "--yes", action="store_true", help="Skip confirmation prompt"
+    )
+    parser.add_argument(
+        "--skip-rebuild",
+        action="store_true",
+        help="Skip rebuilding people.html and the CV",
     )
     parser.add_argument(
         "--list-no-photo",
@@ -336,7 +352,7 @@ Examples:
         parser.print_help()
         sys.exit(1)
 
-    success = offboard_member(args.name, args.end_year, args.yes)
+    success = offboard_member(args.name, args.end_year, args.yes, args.skip_rebuild)
     sys.exit(0 if success else 1)
 
 

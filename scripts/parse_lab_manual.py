@@ -401,13 +401,16 @@ def move_member_to_alumni(tex_path, name, end_year):
     # '\item Caroline Lee (2019 -- 2021)\end{list}' -- leaving the list
     # unterminated and the manual unbuildable.
     item_match = re.search(
-        r'(?m)^[^%\n]*?\\item\s+' + re.escape(name) + r'\*?\s*\((\d{4})\s*--\s*\)',
+        r'(?m)^[^%\n]*?\\item\s+(' + re.escape(name) + r')\*?\s*\((\d{4})\s*--\s*\)',
         section, re.IGNORECASE
     )
     if not item_match:
         raise ValueError(f"Could not find '{name}' in Current lab members section")
 
-    start_year = item_match.group(1)
+    # Callers pass the spreadsheet's lowercase name; the manual's own
+    # spelling is what goes back in.
+    manual_name = item_match.group(1)
+    start_year = item_match.group(2)
 
     headings = [h for h in _HEADING_RE.finditer(section) if h.start() < item_match.start()]
     if not headings:
@@ -430,7 +433,10 @@ def move_member_to_alumni(tex_path, name, end_year):
     )
     alumni_section = content[alumni_start:alumni_end]
 
-    alumni_item = f'\\item {name} ({start_year} -- {end_year})'
+    # A one-year stint is written '(2019)', never '(2019 -- 2019)'.
+    years = (start_year if str(end_year) == start_year
+             else f'{start_year} -- {end_year}')
+    alumni_item = f'\\item {manual_name} ({years})'
     alumni_block = _find_role_block(alumni_section, role_category)
     if not alumni_block:
         new_alumni = _insert_role_block(alumni_section, role_category, alumni_item)

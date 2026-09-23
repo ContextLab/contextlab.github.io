@@ -286,6 +286,21 @@ class TestMoveMember:
         with pytest.raises(ValueError, match="Could not find"):
             move_member_to_alumni(tex_file, 'Nobody Here', 2026)
 
+    def test_keeps_the_manuals_capitalization(self, tex_file):
+        # offboard_member.py passes the spreadsheet's lowercase name; on
+        # 2026-09-23 that wrote '\item jennifer xu (2025 -- 2026)' to the manual.
+        move_member_to_alumni(tex_file, 'alice smith', 2026)
+        content = tex_file.read_text(encoding='utf-8')
+        assert r'\item Alice Smith (2022 -- 2026)' in content
+        assert 'alice smith' not in content
+
+    def test_same_year_range_collapses_to_one_year(self, tex_file):
+        # The manual writes a one-year stint as '(2019)', not '(2019 -- 2019)'.
+        move_member_to_alumni(tex_file, 'Charlie Brown', 2024)
+        content = tex_file.read_text(encoding='utf-8')
+        assert r'\item Charlie Brown (2024)' in content
+        assert '2024 -- 2024' not in content
+
 
 class TestCommitAndPush:
     def test_raises_when_not_initialized(self, tmp_path):

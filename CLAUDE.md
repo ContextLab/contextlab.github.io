@@ -46,7 +46,9 @@ python scripts/add_borders.py photo.jpg images/people/ --face
 # Onboard new member (from scripts/ dir)
 python onboard_member.py "First Last" --rank "grad student" --photo headshot --skip-llm
 
-# Offboard member to alumni (from scripts/ dir)
+# Offboard member to alumni (from scripts/ dir). Updates people.xlsx, the CV
+# source and the lab-manual, then rebuilds people.html and the CV
+# (--skip-rebuild to batch several, then build once)
 python offboard_member.py "member name" --end-year 2025
 
 # Reconcile people across website, CV, and lab-manual
