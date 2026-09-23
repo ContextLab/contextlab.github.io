@@ -74,6 +74,10 @@ Each `build_*.py` follows the same pattern:
 2. Generate HTML fragments
 3. Inject into template via `utils.inject_content(template, output, {"MARKER": html})`
 
+### People: three sources, one order
+
+People appear in `data/people.xlsx`, `documents/JRM_CV.tex` and `lab-manual/lab_manual.tex`, and all three should agree on names, years and order. `build_people.py` orders the undergrad alumni on `people.html` by their order in the CV (`parse_cv_undergrad_order`), so the CV's order is the reference: start year newest first, then name. `reconcile_people.py` checks names only, not years or order.
+
 ### Key Directories
 
 | Directory | Purpose |
