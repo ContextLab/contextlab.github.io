@@ -46,10 +46,41 @@ class TestStripReasoning:
     def test_is_case_insensitive(self):
         assert dc.strip_reasoning("<THINK>x</THINK>done") == "done"
 
+    def test_drops_a_monologue_whose_opening_tag_the_template_sent(self):
+        """What glm-5.3 returned when sent Qwen's switch-off fields."""
+        text = ('The user has asked me to reply with the single word "ok". '
+                'I should comply.</think>ok')
+        assert dc.strip_reasoning(text) == "ok"
+
+
+class TestReasoningSwitches:
+    """Each model family has its own switch; the wrong one backfires."""
+
+    def test_glm_uses_its_own_thinking_field(self):
+        assert dc.reasoning_switches("zai-org.glm-5.3", False) == {
+            "thinking": {"type": "disabled"}}
+        assert dc.reasoning_switches("zai-org.glm-5.3", True) == {
+            "thinking": {"type": "enabled"}}
+
+    def test_qwen_gets_both_of_its_switches(self):
+        off = dc.reasoning_switches("qwen.qwen3.5-122b", False)
+        assert off == {"reasoning_effort": "none",
+                       "chat_template_kwargs": {"enable_thinking": False}}
+        assert dc.reasoning_switches("qwen.qwen3.5-122b", True) == {}
+
+    def test_unknown_models_get_the_qwen_switches(self):
+        assert dc.reasoning_switches("meta.llama-3-2-3b-instruct", False) == \
+            dc.reasoning_switches("qwen.qwen3.8-27b", False)
+
+    def test_callers_cannot_mutate_the_table(self):
+        dc.reasoning_switches("zai-org.glm-5.3", False)["thinking"]["type"] = "x"
+        assert dc.reasoning_switches("zai-org.glm-5.3", False) == {
+            "thinking": {"type": "disabled"}}
+
 
 class TestConfiguration:
     def test_default_model_is_named(self):
-        assert dc.DEFAULT_MODEL == "qwen.qwen3.5-122b"
+        assert dc.DEFAULT_MODEL == "zai-org.glm-5.3"
 
     def test_missing_key_raises_with_instructions(self, monkeypatch):
         monkeypatch.setattr(dc, "get_api_key", lambda: None)
@@ -88,7 +119,13 @@ class TestRealService:
             max_tokens=200,
         )
         assert 15 < len(out) < 500
-        assert "<think>" not in out.lower()
+        assert "think>" not in out.lower()
+        assert not out.lower().startswith(("the user", "okay, the user"))
+
+    def test_a_one_word_reply_is_just_that_word(self):
+        """With the wrong switch glm-5.3 prefixed this with its reasoning."""
+        out = dc.chat("Reply with the single word: ok", max_tokens=100, temperature=0)
+        assert out.strip(" .!").lower() == "ok"
 
     def test_empty_content_raises_rather_than_returning_blank(self):
         """A blank must never reach people.xlsx as somebody's bio.

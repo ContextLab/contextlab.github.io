@@ -18,18 +18,36 @@ package. The request and response bodies are OpenAI-shaped regardless.
 Get a key from chat.dartmouth.edu -> Settings -> Account -> API Keys, then put
 it in the environment or a .env file as DARTMOUTH_CHAT_API_KEY.
 """
+import copy
 import json
 import os
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
 BASE_URL = os.environ.get("DARTMOUTH_CHAT_BASE_URL", "https://chat.dartmouth.edu")
 
-# Confirmed present on the deployment. `list_models()` shows the other 42.
-DEFAULT_MODEL = "qwen.qwen3.5-122b"
+# Confirmed present on the deployment. `list_models()` shows the others.
+# Moved off qwen.qwen3.5-122b on 2026-10-16, when it stopped answering chat
+# requests (still listed, but every completion timed out) while other models
+# on the deployment answered in seconds.
+DEFAULT_MODEL = "zai-org.glm-5.3"
+
+# How to turn a model's reasoning on and off, as (on, off) request fields,
+# keyed by model-name prefix. The switches are not interchangeable: Qwen's
+# switch-off fields make GLM *start* writing its chain of thought into
+# `content`, closed by a bare </think> and followed by the answer. Models
+# matching no prefix get the Qwen fields, which reason by default.
+Switches = Tuple[Dict[str, Any], Dict[str, Any]]
+_QWEN_SWITCHES: Switches = ({}, {"reasoning_effort": "none",
+                       "chat_template_kwargs": {"enable_thinking": False}})
+_REASONING_SWITCHES: Dict[str, Switches] = {
+    "qwen.": _QWEN_SWITCHES,
+    "zai-org.glm": ({"thinking": {"type": "enabled"}},
+                    {"thinking": {"type": "disabled"}}),
+}
 
 DEFAULT_TIMEOUT = 180
 
@@ -108,7 +126,7 @@ def list_models(api_key: Optional[str] = None, timeout: int = 60) -> List[str]:
 def strip_reasoning(text: str) -> str:
     """Remove an inline chain of thought, if a model emits one.
 
-    qwen3.5-122b keeps its scratchpad out of `content` entirely -- see the
+    qwen3.5-122b and glm-5.3 keep their scratchpad out of `content` -- see the
     note on `reasoning` in chat() -- but other models on this deployment wrap
     it in <think>...</think> inline. Left in, that monologue would be written
     into people.xlsx as somebody's bio.
@@ -118,7 +136,22 @@ def strip_reasoning(text: str) -> str:
     # whatever preceded the opening tag rather than returning the monologue.
     if "<think>" in text.lower():
         text = re.split(r"<think>", text, flags=re.IGNORECASE)[0]
+    # A closing tag with no opening one: the template opened the block for
+    # the model (GLM does this when sent the wrong switch), so everything up
+    # to the tag is monologue and the answer follows it.
+    if "</think>" in text.lower():
+        text = re.split(r"</think>", text, flags=re.IGNORECASE)[-1]
     return text.strip()
+
+
+def reasoning_switches(model: str, reasoning: bool) -> Dict[str, Any]:
+    """The request fields that turn `model`'s reasoning on or off."""
+    on, off = next(
+        (switches for prefix, switches in _REASONING_SWITCHES.items()
+         if model.startswith(prefix)),
+        _QWEN_SWITCHES,
+    )
+    return copy.deepcopy(on if reasoning else off)
 
 
 def chat(
@@ -141,12 +174,12 @@ def chat(
     returning `finish_reason: "length"` and a null `content`. Turning thinking
     off answers the same prompt in about 20 tokens and 2 seconds.
 
-    Two switches were tested against the live service. `reasoning_effort:
-    "none"` and `chat_template_kwargs: {"enable_thinking": false}` each work;
-    `reasoning_effort: "low"` and `think: false` are ignored and still burn the
-    budget. Both working switches are sent, since the first is the OpenAI
-    spelling and the second is Qwen's, and whichever model this points at
-    later will recognise one of them.
+    The switch depends on the model (see _REASONING_SWITCHES). For Qwen,
+    `reasoning_effort: "none"` and `chat_template_kwargs: {"enable_thinking":
+    false}` each work and `reasoning_effort: "low"` and `think: false` are
+    ignored. GLM takes `thinking: {"type": "disabled"}`, and Qwen's fields make
+    it write its reasoning into `content` instead; strip_reasoning() removes
+    that if it ever happens, but the right switch avoids it.
 
     Raises DartmouthChatError rather than returning a sentinel, so a caller
     that wants to fall back has to say so explicitly.
@@ -164,16 +197,14 @@ def chat(
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    payload = {
+    payload: Dict[str, Any] = {
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": temperature,
         "stream": False,
     }
-    if not reasoning:
-        payload["reasoning_effort"] = "none"
-        payload["chat_template_kwargs"] = {"enable_thinking": False}
+    payload.update(reasoning_switches(model, reasoning))
 
     try:
         response = requests.post(
