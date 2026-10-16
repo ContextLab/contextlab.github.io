@@ -132,6 +132,57 @@ def format_authors(authors: str) -> str:
     return authors.strip()
 
 
+PREPRINT_SERVERS = ('arxiv', 'biorxiv', 'medrxiv', 'psyarxiv')
+
+
+def preprint_display_id(journal: str, pages: str) -> str:
+    """The short identifier a preprint is cited by, taken from its pages field.
+
+    The pages field of a preprint holds its DOI or server ID, in whatever form
+    it was pasted: '10.31234/osf.io/mhxtd_v1' cites as 'mhxtd',
+    '10.1101/2021.02.22.432360v1' as '2021.02.22.432360'. Anything that isn't
+    from a preprint server comes back unchanged.
+    """
+    pages = str(pages or '').strip()
+    if str(journal or '').strip().lower() not in PREPRINT_SERVERS:
+        return pages
+    pages = re.sub(r'^(https?://)?(dx\.)?(doi\.org/)?', '', pages)
+    pages = re.sub(r'^10\.\d+/', '', pages)
+    pages = re.sub(r'^osf\.io/', '', pages)
+    return re.sub(r'(_v\d+|v\d+)$', '', pages)
+
+
+def paper_venue_detail(
+    journal: str,
+    volume: str = '',
+    issue: str = '',
+    pages: str = '',
+    status: str = '',
+    preprint_id: str = ''
+) -> str:
+    """What follows the journal name in a paper's citation, without markup.
+
+    ', 17: 2055' for a volume and article number, ', 30(10): 5333—5345' with an
+    issue, ': mhxtd' for a preprint, ': In press' for a status. The website and
+    the CV both cite papers through this function, so they cannot disagree on
+    what a citation says, only on how it is marked up.
+    """
+    if preprint_id:
+        return f": {preprint_id}"
+    if volume:
+        detail = f", {volume}"
+        if issue:
+            detail += f"({issue})"
+        if pages:
+            detail += f": {pages}"
+        return detail
+    if status:
+        return f": {status}"
+    if pages:
+        return f": {preprint_display_id(journal, pages)}"
+    return ''
+
+
 def format_paper_citation(
     authors: str,
     year: str,
@@ -176,21 +227,9 @@ def format_paper_citation(
         parts.append(f"{title}.")
 
     # Journal with formatting
-    journal_part = f"<em>{journal}</em>"
-
-    # Handle preprint IDs specially (arXiv, bioRxiv, etc.)
-    if preprint_id:
-        journal_part += f": {preprint_id}"
-    elif volume:
-        journal_part += f", {volume}"
-        if issue:
-            journal_part += f"({issue})"
-        if pages:
-            journal_part += f": {pages}"
-        elif article_number:
-            journal_part += f": {article_number}"
-    elif status:
-        journal_part += f": {status}"
+    journal_part = f"<em>{journal}</em>" + paper_venue_detail(
+        journal, volume, issue, pages or article_number, status, preprint_id
+    )
 
     journal_part += "."
     parts.append(journal_part)

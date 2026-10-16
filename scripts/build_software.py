@@ -12,6 +12,8 @@ The spreadsheet uses structured fields for each software item:
 - docs_link: Documentation URL
 - fileexchange_link: MATLAB File Exchange URL
 - extra_links: Additional links in format "Label1:URL1;Label2:URL2"
+- authors, year, author_roles: used only by cv_sync.py, which lists every
+  package in the CV
 """
 from pathlib import Path
 from typing import List, Dict, Any

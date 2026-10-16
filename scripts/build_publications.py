@@ -6,6 +6,7 @@ using the template in templates/publications.html.
 
 The spreadsheet uses structured fields for each publication type:
 - papers: authors, year, title, journal, volume, issue, pages, status, links
+  (cv_note and author_roles are used only by cv_sync.py, for the CV)
 - chapters: authors, year, title, editors, book_title, publisher info, links
 - dissertations: authors, year, title, degree_type, institution, location, links
 - talks: authors, year, title, venue info, links

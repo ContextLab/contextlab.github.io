@@ -11,6 +11,7 @@ from build_publications import build_publications
 from build_people import build_people
 from build_software import build_software
 from build_news import build_news
+from cv_sync import sync_cv
 
 
 def main():
@@ -34,6 +35,19 @@ def main():
         results.append(('publications.html', 'OK'))
     except Exception as e:
         results.append(('publications.html', f'FAILED: {e}'))
+
+    # Regenerate the CV's publication and software lists from the same
+    # spreadsheets, so the CV never lists different items from the website.
+    # build_cv.py compiles the result.
+    try:
+        updated = sync_cv(
+            documents_dir / 'JRM_CV.tex',
+            data_dir / 'publications.xlsx',
+            data_dir / 'software.xlsx'
+        )
+        results.append(('JRM_CV.tex', 'updated' if updated else 'OK'))
+    except Exception as e:
+        results.append(('JRM_CV.tex', f'FAILED: {e}'))
 
     # Build people.html
     try:
@@ -89,7 +103,7 @@ def main():
     failed = 0
     for page, status in results:
         print(f"  {page}: {status}")
-        if status != 'OK':
+        if status.startswith('FAILED'):
             failed += 1
 
     print("=" * 50)

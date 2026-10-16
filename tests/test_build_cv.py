@@ -1195,9 +1195,11 @@ class TestPdfLogCrossCheck:
         """A log from a different run than the PDF on disk means it's stale."""
         import build_cv
 
-        mismatched = healthy_log['log'].replace(
-            'Output written on JRM_CV.pdf (14 pages',
-            'Output written on JRM_CV.pdf (99 pages',
+        # Whatever the real page count is, claim one the PDF can't have.
+        mismatched = re.sub(
+            r'Output written on JRM_CV\.pdf \(\d+ pages',
+            'Output written on JRM_CV.pdf (999 pages',
+            healthy_log['log'],
         )
         if mismatched == healthy_log['log']:
             pytest.skip("log format changed; page-count line not found")

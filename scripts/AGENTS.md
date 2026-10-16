@@ -12,6 +12,7 @@ scripts/
 ├── build_software.py     # software.xlsx → software.html
 ├── build_news.py         # news.xlsx → news.html
 ├── build_cv.py           # JRM_CV.tex → .pdf + .html
+├── cv_sync.py            # publications.xlsx + software.xlsx → CV's generated lists
 ├── extract_cv.py         # Custom LaTeX→HTML parser
 ├── validate_data.py      # Pre-build validation
 ├── pre_push_check.py     # Full validation suite
@@ -33,6 +34,7 @@ scripts/
 | Fix template injection | `utils.py` | `inject_content()` uses `<!-- MARKER -->` pattern |
 | Fix validation | `validate_data.py` | Required fields, file existence checks |
 | Fix CV parsing | `extract_cv.py` | LaTeX commands → HTML |
+| CV publication/software lists | `cv_sync.py` | Generated from the spreadsheets; trainee marks via `author_roles` + `default_role()` |
 | Fix image borders | `add_borders.py` | Uses MediaPipe for face detection |
 | Onboard lab member | `onboard_member.py` | Processes photo, generates bio, updates spreadsheet + CV + lab-manual |
 | Offboard lab member | `offboard_member.py` | Moves member to alumni, updates CV + lab-manual |

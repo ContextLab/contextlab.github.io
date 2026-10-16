@@ -18,6 +18,7 @@ from typing import List, Optional, Tuple
 
 # Import the custom LaTeX parser
 from extract_cv import extract_cv
+from cv_sync import sync_cv
 
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -405,6 +406,16 @@ def build_cv() -> bool:
     # Check source file exists
     if not TEX_FILE.exists():
         print(f"Error: Source file not found: {TEX_FILE}")
+        return False
+
+    # The publication and software lists come from the spreadsheets; bring
+    # them up to date before compiling, so the PDF and HTML never show a
+    # stale list.
+    try:
+        if sync_cv(TEX_FILE):
+            print(f"Regenerated the spreadsheet-built lists in {TEX_FILE.name}")
+    except ValueError as e:
+        print(f"Error: could not regenerate the CV's lists: {e}")
         return False
 
     # Compile PDF. Clean up on every exit path so a failed run never leaves
