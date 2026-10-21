@@ -12,6 +12,7 @@ from build_software import (
     load_software,
     generate_software_item,
     generate_section_content,
+    generate_section,
     build_software,
 )
 
@@ -176,9 +177,8 @@ class TestBuildSoftware:
         template_path.write_text('''<!DOCTYPE html>
 <html>
 <body>
-<div id="python"><!-- PYTHON_CONTENT --></div>
-<div id="javascript"><!-- JAVASCRIPT_CONTENT --></div>
-<div id="matlab"><!-- MATLAB_CONTENT --></div>
+<p class="jump-links"><!-- SOFTWARE_JUMP_LINKS --></p>
+<!-- SOFTWARE_SECTIONS -->
 </body>
 </html>''')
 
@@ -190,6 +190,42 @@ class TestBuildSoftware:
         result = output_path.read_text()
         assert 'TestPython' in result
         assert 'Python tool.' in result
+
+    def test_sections_follow_sheet_order(self, temp_dir):
+        """Each sheet becomes a section and jump link, in sheet order."""
+        xlsx_path = temp_dir / 'data.xlsx'
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)
+
+        for sheet_name in ['python', 'javascript', 'swift', 'matlab']:
+            ws = wb.create_sheet(title=sheet_name)
+            ws.append(['name', 'description', 'github_link'])
+            ws.append([f'{sheet_name}_tool', 'Description.', f'https://github.com/x/{sheet_name}'])
+
+        wb.save(xlsx_path)
+
+        template_path = temp_dir / 'template.html'
+        template_path.write_text('''<p class="jump-links"><!-- SOFTWARE_JUMP_LINKS --></p>
+<!-- SOFTWARE_SECTIONS -->''')
+
+        output_path = temp_dir / 'output.html'
+        build_software(xlsx_path, template_path, output_path)
+        result = output_path.read_text()
+
+        assert ('<a href="#python">python</a> | <a href="#javascript">javascript</a> | '
+                '<a href="#swift">swift</a> | <a href="#matlab">matlab</a>') in result
+        positions = [result.index(f'<section id="{name}"') for name in ['python', 'javascript', 'swift', 'matlab']]
+        assert positions == sorted(positions)
+        assert '<img src="images/software/swift-icon.png" alt="swift">swift code</h2>' in result
+        swift = result[positions[2]:positions[3]]
+        assert 'swift_tool' in swift
+        assert 'matlab_tool' not in swift
+        assert result.count('<hr>') == 3
+
+    def test_section_without_icon_fails(self, temp_dir):
+        """A sheet with no icon image stops the build."""
+        with pytest.raises(FileNotFoundError, match='rust-icon.png'):
+            generate_section('rust', [], icons_dir=temp_dir)
 
     def test_handles_special_characters(self, temp_dir):
         """Test that special characters are preserved."""
@@ -209,9 +245,8 @@ class TestBuildSoftware:
         template_path.write_text('''<!DOCTYPE html>
 <html>
 <body>
-<div id="python"><!-- PYTHON_CONTENT --></div>
-<div id="javascript"><!-- JAVASCRIPT_CONTENT --></div>
-<div id="matlab"><!-- MATLAB_CONTENT --></div>
+<p class="jump-links"><!-- SOFTWARE_JUMP_LINKS --></p>
+<!-- SOFTWARE_SECTIONS -->
 </body>
 </html>''')
 
@@ -239,6 +274,7 @@ class TestIntegration:
         assert 'python' in data
         assert 'javascript' in data
         assert 'matlab' in data
+        assert list(data).index('swift') == list(data).index('matlab') - 1
 
         # Should have some content
         assert len(data['python']) > 0

@@ -4,6 +4,11 @@
 Reads data from data/software.xlsx and generates software.html
 using the template in templates/software.html.
 
+Each sheet of the spreadsheet is one section of the page, in sheet order:
+the sheet's name is the section's id, jump link and heading ("<name> code"),
+and its icon is images/software/<name>-icon.png. Adding a sheet (and its
+icon) adds a section; the template is not edited.
+
 The spreadsheet uses structured fields for each software item:
 - name: Software name
 - description: Software description (supports markdown/HTML)
@@ -22,6 +27,8 @@ import openpyxl
 from utils import inject_content
 from citation_utils import markdown_to_html, build_links_html
 
+ICONS_DIR = Path(__file__).parent.parent / 'images' / 'software'
+
 
 def load_software(xlsx_path: Path) -> Dict[str, List[Dict[str, Any]]]:
     """Load all software data from Excel spreadsheet.
@@ -30,7 +37,7 @@ def load_software(xlsx_path: Path) -> Dict[str, List[Dict[str, Any]]]:
         xlsx_path: Path to the software.xlsx file
 
     Returns:
-        Dictionary with keys for each section (python, javascript, matlab)
+        Dictionary with one key per sheet, in sheet order
         Each value is a list of software item dictionaries.
     """
     wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
@@ -144,6 +151,38 @@ def generate_section_content(items: List[Dict[str, Any]]) -> str:
     return '\n\n                '.join(paragraphs)
 
 
+def generate_jump_links(sections: List[str]) -> str:
+    """Generate the page header's links to each section."""
+    return ' | '.join(f'<a href="#{name}">{name}</a>' for name in sections)
+
+
+def generate_section(name: str, items: List[Dict[str, Any]], icons_dir: Path = ICONS_DIR) -> str:
+    """Generate the HTML <section> for one spreadsheet sheet.
+
+    Raises:
+        FileNotFoundError: If the sheet has no icon in icons_dir
+    """
+    icon = icons_dir / f'{name}-icon.png'
+    if not icon.exists():
+        raise FileNotFoundError(f"No icon for software section '{name}': add {icon}")
+
+    return f'''        <section id="{name}" class="content-section software-section">
+            <h2><img src="images/software/{icon.name}" alt="{name}">{name} code</h2>
+
+            <div class="software-list mt-20">
+                {generate_section_content(items)}
+            </div>
+
+            <p class="back-to-top">^ <a href="#top">REINSTATE CONTEXT (BACK TO TOP)</a> ^</p>
+        </section>'''
+
+
+def generate_sections(data: Dict[str, List[Dict[str, Any]]], icons_dir: Path = ICONS_DIR) -> str:
+    """Generate every section, in sheet order, separated by rules."""
+    sections = [generate_section(name, items, icons_dir) for name, items in data.items()]
+    return '\n\n        <hr>\n\n'.join(sections).lstrip()
+
+
 def build_software(
     data_path: Path,
     template_path: Path,
@@ -159,11 +198,10 @@ def build_software(
     # Load data
     data = load_software(data_path)
 
-    # Generate content for each section
+    # One section per sheet, in sheet order
     replacements = {
-        'PYTHON_CONTENT': generate_section_content(data.get('python', [])),
-        'JAVASCRIPT_CONTENT': generate_section_content(data.get('javascript', [])),
-        'MATLAB_CONTENT': generate_section_content(data.get('matlab', [])),
+        'SOFTWARE_JUMP_LINKS': generate_jump_links(list(data)),
+        'SOFTWARE_SECTIONS': generate_sections(data),
     }
 
     # Inject into template

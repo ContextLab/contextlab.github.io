@@ -311,11 +311,15 @@ The tool uses fuzzy name matching to catch spelling variations and nicknames. Di
 #### Adding Software
 
 1. Open `data/software.xlsx`
-2. Go to the appropriate sheet (`python`, `javascript`, or `matlab`)
+2. Go to the appropriate sheet (`python`, `javascript`, `swift`, or `matlab`)
 3. Add a new row with:
    - `name` - Project name
    - `description` - Brief description
-   - `links_html` - HTML for links, e.g., `[<a href="https://github.com/..." target="_blank">GitHub</a>]`
+   - `github_link`, `pypi_link`, `docs_link`, `fileexchange_link` - Links (optional)
+   - `extra_links` - Other links as `Label1:URL1;Label2:URL2` (optional)
+   - `authors`, `year`, `author_roles` - Used for the CV's software list
+
+Each sheet is one section of `software.html`, in sheet order. To add a language, add a sheet (its name becomes the section's id, jump link and "<name> code" heading) and an icon at `images/software/<name>-icon.png`; the build fails if the icon is missing. The CV lists every sheet's packages together, newest first.
 
 ### Building Locally
 
@@ -387,7 +391,9 @@ You can also manually trigger a build from the [Actions tab](https://github.com/
 |-------|----------|-------------|
 | `name` | Yes | Project name |
 | `description` | Yes | Brief description |
-| `links_html` | No | HTML links to repo, docs, etc. |
+| `github_link` / `pypi_link` / `docs_link` / `fileexchange_link` | No | Links to repo, package, docs, File Exchange |
+| `extra_links` | No | Other links, `Label1:URL1;Label2:URL2` |
+| `authors`, `year`, `author_roles` | For the CV | Used by `cv_sync.py` |
 
 ### Tips
 

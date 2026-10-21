@@ -74,6 +74,8 @@ Each `build_*.py` follows the same pattern:
 2. Generate HTML fragments
 3. Inject into template via `utils.inject_content(template, output, {"MARKER": html})`
 
+`software.html` gets one section per sheet of `data/software.xlsx`, in sheet order (`build_software.generate_sections`), with its icon at `images/software/<sheet>-icon.png`. Add a language by adding a sheet and icon, not by editing the template.
+
 ### People: three sources, one order
 
 People appear in `data/people.xlsx`, `documents/JRM_CV.tex` and `lab-manual/lab_manual.tex`, and all three should agree on names, years and order. `build_people.py` orders the undergrad alumni on `people.html` by their order in the CV (`parse_cv_undergrad_order`), so the CV's order is the reference: start year newest first, then name. `scripts/people_order.py` holds that rule; onboarding and offboarding insert every CV, lab-manual and alumni-sheet entry at its sorted position through it. `reconcile_people.py` checks names only, not years or order.
