@@ -261,15 +261,22 @@ def end_sentence(text: str) -> str:
     return text if ended else text + '.'
 
 
+# Capitalized names a description may start with, which sentence_fragment
+# would otherwise lowercase
+PROPER_NOUNS = {'Android', 'Blender', 'Gmail', 'Google', 'Jupyter', 'Python', 'Thunderbird'}
+
+
 def sentence_fragment(text: str, name: str = '') -> str:
     """Lowercase a description's first word so it can follow 'Name:'.
 
     Words written in capitals or with inner capitals (LLM, BrainIAK, MATLAB)
-    are names and keep their case, as does the item's own name ('Clustrix is
-    a Python package...').
+    are names and keep their case, as do the item's own name ('Clustrix is
+    a Python package...') and the proper nouns in PROPER_NOUNS.
     """
     first = text.split(' ', 1)[0]
     if name and first.strip('.,:;').casefold() == name.split(' ', 1)[0].casefold():
+        return text
+    if first.strip('.,:;') in PROPER_NOUNS:
         return text
     if first[:1].isupper() and first[1:] == first[1:].lower():
         return text[0].lower() + text[1:]

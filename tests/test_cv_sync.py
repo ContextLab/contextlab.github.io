@@ -203,6 +203,7 @@ class TestLatex:
         assert sentence_fragment('LLM demos.') == 'LLM demos.'
         assert sentence_fragment('BrainIAK is great.') == 'BrainIAK is great.'
         assert sentence_fragment('Clustrix is a package.', 'Clustrix') == 'Clustrix is a package.'
+        assert sentence_fragment('Android and web app.', 'Dream Stream') == 'Android and web app.'
 
 
 class TestVenueDetail:
