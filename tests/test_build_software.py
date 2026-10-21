@@ -274,7 +274,9 @@ class TestIntegration:
         assert 'python' in data
         assert 'javascript' in data
         assert 'matlab' in data
-        assert list(data).index('swift') == list(data).index('matlab') - 1
+        sheets = list(data)
+        assert sheets.index('swift') < sheets.index('matlab')
+        assert sheets.index('kotlin') < sheets.index('matlab')
 
         # Should have some content
         assert len(data['python']) > 0
