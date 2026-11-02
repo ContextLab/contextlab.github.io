@@ -300,6 +300,20 @@ class TestFindCvSection:
         assert find_cv_section(real_cv, 'Paxton Fitzpatrick') == 'grad'
 
 
+@pytest.fixture
+def current_grad_with_undergrad_history(cv_file):
+    """Retain the historical regression case independently of the live roster."""
+    content = cv_file.read_text(encoding='utf-8')
+    content = content.replace(
+        r'\item Claudia Gonciulea (Doctoral student; 2025 -- )',
+        r'\item Paxton Fitzpatrick (Doctoral student; 2021 -- )')
+    content = content.replace(
+        r'\item Old Timer (2019 -- 2021)',
+        r'\item Paxton Fitzpatrick* (2017 -- 2019)')
+    cv_file.write_text(content, encoding='utf-8')
+    return cv_file
+
+
 class TestCvEntryIsOpen:
     def test_open_range(self, cv_file):
         assert cv_entry_is_open(cv_file, 'Neui Wadwalai')
@@ -313,15 +327,16 @@ class TestCvEntryIsOpen:
     def test_absent_name(self, cv_file):
         assert not cv_entry_is_open(cv_file, 'Nobody Here')
 
-    def test_a_person_with_both_reads_as_open(self, real_cv):
+    def test_a_person_with_both_reads_as_open(self, current_grad_with_undergrad_history):
         """The case that broke the old has-an-end-date question."""
-        assert cv_entry_is_open(real_cv, 'Paxton Fitzpatrick')
+        assert cv_entry_is_open(current_grad_with_undergrad_history, 'Paxton Fitzpatrick')
 
-    def test_reopening_paxton_is_not_attempted(self, real_cv):
+    def test_reopening_paxton_is_not_attempted(self, current_grad_with_undergrad_history):
         """Re-onboarding a current grad must not touch their closed undergrad
         range. The old cv_entry_has_end_date said True for Paxton and sent
         onboarding into reopen_cv_entry, which would reopen '(2017 -- 2019)'.
         """
+        real_cv = current_grad_with_undergrad_history
         before = real_cv.read_text(encoding='utf-8')
         assert add_to_cv(real_cv, 'Paxton Fitzpatrick', 'grad student', '2026') is True
         assert real_cv.read_text(encoding='utf-8') == before

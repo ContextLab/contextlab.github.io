@@ -80,7 +80,7 @@ class TestReasoningSwitches:
 
 class TestConfiguration:
     def test_default_model_is_named(self):
-        assert dc.DEFAULT_MODEL == "zai-org.glm-5.3"
+        assert dc.DEFAULT_MODEL == "qwen.qwen3.8-27b"
 
     def test_missing_key_raises_with_instructions(self, monkeypatch):
         monkeypatch.setattr(dc, "get_api_key", lambda: None)
@@ -99,7 +99,11 @@ class TestRealService:
 
     def test_the_default_model_actually_exists(self):
         """Guards against the deployment retiring the model we name."""
-        assert dc.DEFAULT_MODEL in dc.list_models()
+        models = dc.list_models()
+        assert dc.DEFAULT_MODEL in models, (
+            f"Missing {dc.DEFAULT_MODEL}; available Qwen models: "
+            f"{[m for m in models if 'qwen' in m.lower()]}"
+        )
 
     def test_returns_text(self):
         out = dc.chat("Reply with exactly: ok", max_tokens=50, temperature=0)

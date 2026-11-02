@@ -29,11 +29,8 @@ import requests
 
 BASE_URL = os.environ.get("DARTMOUTH_CHAT_BASE_URL", "https://chat.dartmouth.edu")
 
-# Confirmed present on the deployment. `list_models()` shows the others.
-# Moved off qwen.qwen3.5-122b on 2026-10-16, when it stopped answering chat
-# requests (still listed, but every completion timed out) while other models
-# on the deployment answered in seconds.
-DEFAULT_MODEL = "zai-org.glm-5.3"
+# Selected for lab bio editing. The live CI check verifies availability.
+DEFAULT_MODEL = "qwen.qwen3.8-27b"
 
 # How to turn a model's reasoning on and off, as (on, off) request fields,
 # keyed by model-name prefix. The switches are not interchangeable: Qwen's
