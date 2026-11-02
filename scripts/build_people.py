@@ -261,6 +261,12 @@ def generate_members_content(members: List[Dict[str, Any]]) -> str:
     if not members:
         return ""
 
+    # Stable sorting preserves the existing order within each role.
+    role_order = {'postdoc': 0, 'grad student': 1, 'masters student': 2,
+                  'lab manager': 3, 'research scientist': 4, 'researcher': 5,
+                  'undergrad': 6}
+    members = sorted(members, key=lambda m: role_order.get(
+        str(m.get('role', '')).lower(), 7))
     cards = [generate_member_card(m) for m in members]
 
     # Group cards into rows of 3
@@ -522,7 +528,8 @@ def build_people(data_path: Path, template_path: Path, output_path: Path, cv_pat
 
     replacements = {
         "DIRECTOR_CONTENT": director_content,
-        "MEMBERS_CONTENT": generate_members_content(data.get("members", [])),
+        "MEMBERS_CONTENT": generate_members_content(
+            data.get("members", []) + data.get("researchers", [])),
         "ALUMNI_POSTDOCS_CONTENT": generate_alumni_list_content(
             data.get("alumni_postdocs", [])
         ),

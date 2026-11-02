@@ -94,17 +94,17 @@ def validate_people(project_root: Path) -> List[str]:
                     errors.append(f"people/director row {i}: {file_error}")
 
     # Validate members
-    if 'members' in data:
-        for i, item in enumerate(data['members'], 1):
+    for sheet_name in ('members', 'researchers'):
+        for i, item in enumerate(data.get(sheet_name, []), 1):
             if not item.get('name'):
-                errors.append(f"people/members row {i}: missing name")
+                errors.append(f"people/{sheet_name} row {i}: missing name")
             if item.get('image'):
                 file_error = check_file_exists(item['image'], image_dir)
                 if file_error:
-                    errors.append(f"people/members row {i}: {file_error}")
+                    errors.append(f"people/{sheet_name} row {i}: {file_error}")
             url = item.get('name_url', '')
             if url and not validate_url_format(url):
-                errors.append(f"people/members row {i}: invalid URL '{url}'")
+                errors.append(f"people/{sheet_name} row {i}: invalid URL '{url}'")
 
     # Validate alumni sheets
     for sheet_name in ['alumni_postdocs', 'alumni_grads', 'alumni_managers']:

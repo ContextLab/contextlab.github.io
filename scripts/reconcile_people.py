@@ -33,7 +33,7 @@ def load_people_xlsx() -> Dict[str, List[Dict]]:
 
 # Sheets in people.xlsx that contain actual lab members/alumni
 PERSON_SHEETS = {
-    'members', 'alumni_postdocs', 'alumni_grads',
+    'members', 'researchers', 'alumni_postdocs', 'alumni_grads',
     'alumni_managers', 'alumni_undergrads',
 }
 

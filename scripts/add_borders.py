@@ -13,8 +13,12 @@ Usage:
 
     # With face detection for smart cropping
     python add_borders.py photo.png output_dir/ --face
+
+    # Zoom into a poster panel; focus is a fraction of the source width/height
+    python add_borders.py poster.png output_dir/ --zoom 2 --focus 0.5 0.37
 """
 import argparse
+import math
 import random
 import shutil
 import subprocess
@@ -114,27 +118,37 @@ def get_face_detector():
     return get_face_detector._detector
 
 
-def crop_to_square(img: Image.Image, use_face_detection: bool = False) -> Image.Image:
+def crop_to_square(img: Image.Image, use_face_detection: bool = False,
+                   zoom: float = 1.0, focus: tuple = (0.5, 0.5)) -> Image.Image:
     """Crop image to square, centered on face (if requested) or image center.
 
-    The crop size is the minimum of width and height (no upscaling).
+    The crop side is the shorter source dimension divided by zoom.
 
     Args:
         img: PIL Image to crop
         use_face_detection: If True, use mediapipe to detect face and center
                            crop on it. Falls back to center if no face found.
+        zoom: Magnification relative to the default square crop (at least 1).
+        focus: Fractional source coordinates (x, y), each between 0 and 1.
+               Crops near an edge are shifted inward to avoid blank padding.
 
     Returns:
         Square-cropped image
     """
+    if not math.isfinite(zoom) or zoom < 1:
+        raise ValueError('zoom must be finite and at least 1')
+    if len(focus) != 2 or any(not math.isfinite(v) or not 0 <= v <= 1 for v in focus):
+        raise ValueError('focus must contain two finite coordinates between 0 and 1')
+    if use_face_detection and focus != (0.5, 0.5):
+        raise ValueError('explicit focus cannot be combined with face detection')
     width, height = img.size
-    if width == height:
+    if width == height and zoom == 1:
         return img
 
-    crop_size = min(width, height)
+    crop_size = max(1, int(min(width, height) / zoom))
 
     # Default to center crop
-    center_x, center_y = width // 2, height // 2
+    center_x, center_y = int(width * focus[0]), int(height * focus[1])
 
     if use_face_detection:
         try:
@@ -439,7 +453,9 @@ def process_images(
     svg_path: Path,
     output_size: int = OUTPUT_SIZE,
     use_face_detection: bool = False,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
+    zoom: float = 1.0,
+    focus: tuple = (0.5, 0.5),
 ) -> None:
     """Process images, adding borders after optional crop and resize.
 
@@ -449,6 +465,8 @@ def process_images(
         svg_path: Path to SVG file with border designs
         output_size: Size of output images (square)
         use_face_detection: Use face detection for centering crops
+        zoom: Magnification relative to the default square crop
+        focus: Fractional source coordinates for the center of the crop
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -487,7 +505,8 @@ def process_images(
         original_size = img.size
 
         # Step 1: Crop to square (with optional face detection)
-        img = crop_to_square(img, use_face_detection=use_face_detection)
+        img = crop_to_square(img, use_face_detection=use_face_detection,
+                             zoom=zoom, focus=focus)
         if original_size[0] != original_size[1]:  # Was not square before
             print(f"    Cropped to {img.size[0]}x{img.size[1]}")
 
@@ -557,7 +576,18 @@ def main():
              'different border every time.'
     )
 
+    parser.add_argument('--zoom', type=float, default=1.0,
+                        help='Poster detail magnification (default: 1; try 2 or 3)')
+    parser.add_argument('--focus', type=float, nargs=2, default=(0.5, 0.5),
+                        metavar=('X', 'Y'),
+                        help='Crop center as fractions of source width and height (0 to 1)')
     args = parser.parse_args()
+    if not math.isfinite(args.zoom) or args.zoom < 1:
+        parser.error('--zoom must be finite and at least 1')
+    if any(not math.isfinite(v) or not 0 <= v <= 1 for v in args.focus):
+        parser.error('--focus coordinates must be finite and between 0 and 1')
+    if args.face and tuple(args.focus) != (0.5, 0.5):
+        parser.error('--face cannot be combined with an explicit --focus')
 
     # Validate inputs exist
     for input_path in args.inputs:
@@ -573,7 +603,9 @@ def main():
         args.border_svg,
         args.output_size,
         use_face_detection=args.face,
-        seed=args.seed
+        seed=args.seed,
+        zoom=args.zoom,
+        focus=tuple(args.focus),
     )
 
 

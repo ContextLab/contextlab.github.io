@@ -271,6 +271,7 @@ def parse_cv_trainees(cv_path: Path) -> Dict[str, List[Trainee]]:
     trainees: Dict[str, Any] = {
         'postdocs': [],
         'grads': [],
+        'researchers': [],
         'undergrads': []
     }
 
@@ -294,6 +295,7 @@ def parse_cv_trainees(cv_path: Path) -> Dict[str, List[Trainee]]:
         r'\textit{Graduate Advisees}',
         r'\textit{Thesis Committees}'
     )
+    grad_section = grad_section.split(r'\textit{Postbac Researchers}')[0]
 
     # Find all \item entries in grad section - handle multi-line entries
     grad_items = re.findall(r'\\item\s+.+?\([^)]+\)', grad_section, re.DOTALL)
@@ -301,6 +303,14 @@ def parse_cv_trainees(cv_path: Path) -> Dict[str, List[Trainee]]:
         trainee = parse_grad_entry(item)
         if trainee:
             trainees['grads'].append(trainee)
+
+    researcher_section = extract_section(
+        content, r'\textit{Postbac Researchers}', r'\textit{Thesis Committees}')
+    for item in re.findall(r'\\item\s+.+?\([^)]+\)', researcher_section, re.DOTALL):
+        trainee = parse_grad_entry(item)
+        if trainee:
+            trainee.category = 'researcher'
+            trainees['researchers'].append(trainee)
 
     # Extract undergraduate section
     undergrad_section = extract_section(

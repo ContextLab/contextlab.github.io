@@ -110,6 +110,10 @@ def load_role_spans(cv_path: Path = CV_PATH) -> Dict[PersonKey, List[RoleSpan]]:
     """Every lab trainee's roles and years, from the CV's mentorship section."""
     spans: Dict[PersonKey, List[RoleSpan]] = {}
     for group, trainees in parse_cv_trainees(cv_path).items():
+        # Postbac researchers have their own mentorship list, but no author
+        # typography in the CV's existing undergrad/grad/postdoc legend.
+        if group not in _TRAINEE_GROUPS:
+            continue
         role = _TRAINEE_GROUPS[group]
         for trainee in trainees:
             if trainee.start_year is None:

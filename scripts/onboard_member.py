@@ -699,15 +699,18 @@ def member_exists_in_spreadsheet(
     xlsx_path: Path, name: str
 ) -> Tuple[bool, Optional[int]]:
     wb = openpyxl.load_workbook(xlsx_path)
-    sheet = wb["members"]
 
     name_lower = name.lower()
-    for row_idx, row in enumerate(
-        sheet.iter_rows(min_row=2, values_only=True), start=2
-    ):
-        if row[1] and str(row[1]).lower() == name_lower:
-            wb.close()
-            return True, row_idx
+    for sheet_name in ("members", "researchers"):
+        if sheet_name not in wb.sheetnames:
+            continue
+        sheet = wb[sheet_name]
+        for row_idx, row in enumerate(
+            sheet.iter_rows(min_row=2, values_only=True), start=2
+        ):
+            if row[1] and str(row[1]).lower() == name_lower:
+                wb.close()
+                return True, row_idx
 
     wb.close()
     return False, None
@@ -715,16 +718,19 @@ def member_exists_in_spreadsheet(
 
 def get_existing_bio(xlsx_path: Path, name: str) -> Optional[str]:
     wb = openpyxl.load_workbook(xlsx_path)
-    sheet = wb["members"]
 
     name_lower = name.lower()
-    for row in sheet.iter_rows(min_row=2, values_only=True):
-        if row[1] and str(row[1]).lower() == name_lower:
-            bio = row[4] if len(row) > 4 else None
-            wb.close()
-            if bio and len(str(bio)) > 10:
-                return str(bio)
-            return None
+    for sheet_name in ("members", "researchers"):
+        if sheet_name not in wb.sheetnames:
+            continue
+        sheet = wb[sheet_name]
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if row[1] and str(row[1]).lower() == name_lower:
+                bio = row[4] if len(row) > 4 else None
+                wb.close()
+                if bio and len(str(bio)) > 10:
+                    return str(bio)
+                return None
 
     wb.close()
     return None
@@ -854,13 +860,25 @@ def add_to_spreadsheet(
     xlsx_path: Path, name: str, role: str, bio: str, image: str, website: str
 ) -> None:
     wb = openpyxl.load_workbook(xlsx_path)
-    sheet = wb["members"]
-
-    exists, row_idx = member_exists_in_spreadsheet(xlsx_path, name)
-    wb.close()
-
-    wb = openpyxl.load_workbook(xlsx_path)
-    sheet = wb["members"]
+    target = "researchers" if role.lower() == "researcher" else "members"
+    if target not in wb.sheetnames:
+        wb.create_sheet(target).append([cell.value for cell in wb["members"][1]])
+    sheet = wb[target]
+    exists, row_idx = False, None
+    for source_name in ("members", "researchers"):
+        if source_name not in wb.sheetnames:
+            continue
+        source = wb[source_name]
+        for idx, row in enumerate(source.iter_rows(min_row=2, values_only=True), 2):
+            if str(row[1] or "").lower() == name.lower():
+                if source_name != target:
+                    sheet.append(list(row))
+                    source.delete_rows(idx)
+                    row_idx = sheet.max_row
+                else:
+                    row_idx = idx
+                exists = True
+                break
 
     if exists and row_idx is not None:
         print(f"  Updating existing entry for {name} at row {row_idx}")
@@ -973,6 +991,12 @@ CV_SECTIONS = {
         "pattern": r"(\\textit\{Graduate Advisees\}:\s*\n\\begin\{etaremune\})",
         "entry": "\\item {name} (Doctoral student; {year} -- )",
     },
+    "researcher": {
+        "label": "Postbac Researchers",
+        "marker": r"\textit{Postbac Researchers}:",
+        "pattern": r"(\\textit\{Postbac Researchers\}:\s*\n\\begin\{etaremune\})",
+        "entry": "\\item {name} (Postbac researcher; {year} -- )",
+    },
     "undergrad": {
         "label": "Undergraduate Advisees",
         "marker": r"\textit{Undergraduate Advisees}:",
@@ -1000,6 +1024,8 @@ def cv_section_for_role(role: str) -> Optional[str]:
         return None
     if "postdoc" in role_lower:
         return "postdoc"
+    if role_lower in {"researcher", "postbac researcher"}:
+        return "researcher"
     if "grad" in role_lower and "undergrad" not in role_lower:
         return "grad"
     return "undergrad"

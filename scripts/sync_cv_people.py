@@ -234,6 +234,8 @@ def get_target_sheet(trainee: Trainee) -> str:
         Sheet name ('members', 'alumni_postdocs', 'alumni_grads', 'alumni_undergrads')
     """
     if trainee.is_active:
+        if trainee.category == 'researcher':
+            return 'researchers'
         return 'members'
 
     # Alumni - route to appropriate sheet
@@ -278,6 +280,8 @@ def get_role_for_spreadsheet(trainee: Trainee) -> str:
     """
     if trainee.category == 'postdoc':
         return 'postdoc'
+    elif trainee.category == 'researcher':
+        return 'researcher'
     elif trainee.category == 'grad':
         if trainee.role:
             if 'doctoral' in trainee.role.lower():
@@ -394,7 +398,7 @@ def compare_trainees(
 
     # Check for spreadsheet entries not in CV
     # Only check members, alumni_postdocs, alumni_grads, alumni_undergrads
-    check_sheets = ['members', 'alumni_postdocs', 'alumni_grads', 'alumni_undergrads']
+    check_sheets = ['members', 'researchers', 'alumni_postdocs', 'alumni_grads', 'alumni_undergrads']
     for sheet_name in check_sheets:
         for name in spreadsheet_names.get(sheet_name, set()):
             # Check if this name matches any CV name (using nickname matching)
@@ -506,7 +510,7 @@ def apply_spreadsheet_updates(
         ws = wb[sheet_name]
 
         # Build new row based on sheet type
-        if sheet_name == 'members':
+        if sheet_name in {'members', 'researchers'}:
             # Members: image, name, name_url, role, bio, links_html
             new_row = [
                 '',  # image - needs to be added manually

@@ -126,6 +126,7 @@ def _parse_list_entries(content, role_category, is_active, records):
 
 # Common role names (as passed to --rank) mapped to lab-manual headings.
 ROLE_MAP = {
+    'researcher': 'Postbac Researchers',
     'postdoc': 'Postdoctoral Researchers',
     'grad student': 'Graduate Students',
     'graduate student': 'Graduate Students',
@@ -142,6 +143,7 @@ ROLE_ORDER = [
     'PI',
     'Postdoctoral Researchers',
     'Graduate Students',
+    'Postbac Researchers',
     'Lab Managers',
     'Research Assistants',
     'Undergraduate RAs',
